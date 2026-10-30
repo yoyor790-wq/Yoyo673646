@@ -1,4 +1,4 @@
--- Includes NEX Egg Peek panel | (c) NEX
+-- Includes NEX Hub + NEX Egg Peek | (c) NEX - All rights reserved
 -- NEX Hub hook: records every control ChiliHub creates so the NEX interface can mirror it.
 do
 	local env = (type(getgenv) == "function" and getgenv()) or _G
@@ -6,6 +6,7 @@ do
 	local hub = {
 		tabs = {},
 		tabOrder = {},
+		quick = {},
 		version = 0,
 		instrumented = setmetatable({}, { __mode = "k" }),
 		recorded = setmetatable({}, { __mode = "k" }),
@@ -146,10 +147,233 @@ do
 		return record
 	end
 
+	-- Keep ChiliHub's original interface hidden from the very first frame (loading included).
+	local coreGui = game:GetService("CoreGui")
+	local playersService = game:GetService("Players")
+	local runService = game:GetService("RunService")
+
+	hub.hideClassic = true
+	hub.ready = false
+
+	local intended = setmetatable({}, { __mode = "k" })
+	local watched = setmetatable({}, { __mode = "k" })
+	local forcing = false
+	local frames = 0
+
+	local function isClassicGui(gui)
+		if string.sub(gui.Name, 1, 6) == "Chilli" then
+			return true
+		end
+
+		local owned = false
+
+		pcall(function()
+			for key in pairs(gui:GetAttributes()) do
+				if string.sub(key, 1, 18) == "ChilliLibraryOwned" then
+					owned = true
+				end
+			end
+		end)
+
+		return owned
+	end
+
+	local function setEnabled(gui, value)
+		forcing = true
+		pcall(function()
+			gui.Enabled = value
+		end)
+		forcing = false
+	end
+
+	local function watch(gui)
+		if watched[gui] or not isClassicGui(gui) then
+			return
+		end
+
+		watched[gui] = true
+		intended[gui] = gui.Enabled
+
+		if hub.hideClassic and gui.Enabled then
+			setEnabled(gui, false)
+		end
+
+		gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+			if forcing then
+				return
+			end
+
+			-- Remember what the library wanted, then keep it hidden.
+			intended[gui] = gui.Enabled
+
+			if hub.hideClassic and gui.Enabled then
+				setEnabled(gui, false)
+			end
+		end)
+	end
+
+	local function getContainers()
+		local containers = { coreGui }
+
+		if type(gethui) == "function" then
+			local success, container = pcall(gethui)
+			if success and container then
+				table.insert(containers, container)
+			end
+		end
+
+		pcall(function()
+			local playerGui = playersService.LocalPlayer and playersService.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+			if playerGui then
+				table.insert(containers, playerGui)
+			end
+		end)
+
+		return containers
+	end
+
+	local function sweep()
+		for _, container in ipairs(getContainers()) do
+			for _, child in ipairs(container:GetChildren()) do
+				if child:IsA("ScreenGui") then
+					watch(child)
+				end
+			end
+		end
+	end
+
+	-- Catch new guis the moment they appear, and sweep every frame while loading.
+	for _, container in ipairs(getContainers()) do
+		pcall(function()
+			container.ChildAdded:Connect(function(child)
+				pcall(function()
+					if child:IsA("ScreenGui") then
+						watch(child)
+					end
+				end)
+			end)
+		end)
+	end
+
+	pcall(function()
+		runService.Heartbeat:Connect(function()
+			frames = frames + 1
+
+			if frames < 3600 or frames % 15 == 0 then
+				pcall(sweep)
+			end
+		end)
+	end)
+
+	pcall(sweep)
+
+	---Hide or restore the original ChiliHub interface.
+	function hub.setClassicHidden(hidden)
+		hub.hideClassic = hidden
+
+		for gui in pairs(watched) do
+			setEnabled(gui, (not hidden) and intended[gui] ~= false)
+		end
+	end
+
+	-- Small NEX loader so the screen is never empty while ChiliHub loads.
+	local loader = nil
+
+	pcall(function()
+		local parent = coreGui
+
+		if type(gethui) == "function" then
+			local success, container = pcall(gethui)
+			if success and container then
+				parent = container
+			end
+		end
+
+		loader = Instance.new("ScreenGui")
+		loader.Name = "NexLoading"
+		loader.ResetOnSpawn = false
+		loader.IgnoreGuiInset = true
+		loader.DisplayOrder = 200
+
+		local pill = Instance.new("TextLabel")
+		pill.AnchorPoint = Vector2.new(0.5, 0)
+		pill.Position = UDim2.new(0.5, 0, 0, 14)
+		pill.Size = UDim2.fromOffset(190, 30)
+		pill.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
+		pill.TextColor3 = Color3.fromRGB(236, 238, 248)
+		pill.Font = Enum.Font.GothamBold
+		pill.TextSize = 13
+		pill.RichText = true
+		pill.Text = '<font color="#7C5CFF"><b>NEX</b></font>  Hub  •  Loading'
+		pill.Parent = loader
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 15)
+		corner.Parent = pill
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(124, 92, 255)
+		stroke.Thickness = 1.5
+		stroke.Parent = pill
+
+		loader.Parent = parent
+
+		task.spawn(function()
+			local dots = 0
+
+			while loader and loader.Parent do
+				dots = dots % 3 + 1
+				pill.Text = '<font color="#7C5CFF"><b>NEX</b></font>  Hub  •  Loading' .. string.rep(".", dots)
+				task.wait(0.4)
+			end
+		end)
+	end)
+
+	---Remove the loader once the NEX interface is ready (or has failed).
+	function hub.finishLoading()
+		if loader then
+			pcall(function()
+				loader:Destroy()
+			end)
+
+			loader = nil
+		end
+	end
+
+	-- Safety net: never leave the person without any interface if the NEX Hub does not come up.
+	task.delay(60, function()
+		if not hub.ready then
+			hub.setClassicHidden(false)
+			hub.finishLoading()
+		end
+	end)
+
 	---Start recording everything created through this window.
 	function hub.hookWindow(window, defaultName)
 		wrap(window, "CreateTab", function(tab, _, opts)
 			instrumentTab(tab, getTab(keyOf(opts, "Tab"), opts))
+		end)
+
+		-- Hidden on/off states (like Anti Guard) get a switch too.
+		wrap(window, "CreateState", function(control, _, opts)
+			if type(opts) ~= "table" or type(opts.Default) ~= "boolean" then
+				return
+			end
+
+			local name = tostring(opts.Name or "")
+
+			-- Internal panel states stay hidden.
+			if name == "" or string.sub(name, -4) == "Open" then
+				return
+			end
+
+			table.insert(hub.quick, {
+				kind = "toggle",
+				opts = { Name = (string.gsub(name, " Enabled$", "")) },
+				control = control,
+			})
+
+			hub.version = hub.version + 1
 		end)
 
 		wrap(window, "GetDefaultTab", function(tab)
@@ -49574,6 +49798,25 @@ local nexEntry = function()
 		return result
 	end
 
+	---Get the picture of a pet as an asset string.
+	local function getPetIcon(pet)
+		local icon = pet.Icon
+
+		if icon == nil and type(pet.Egg) == "table" then
+			icon = pet.Egg.Icon
+		end
+
+		if type(icon) == "number" then
+			return "rbxassetid://" .. tostring(icon)
+		end
+
+		if type(icon) == "string" then
+			return icon
+		end
+
+		return ""
+	end
+
 	---Build the info table for one egg record.
 	local function buildEggInfo(record, pet, mutationsModule, eggRecords)
 		local scale = tonumber(record.AssetScale) or 1
@@ -49623,6 +49866,7 @@ local nexEntry = function()
 			uid = record.Uid,
 			name = tostring(pet.DisplayName or record.AssetCategory),
 			rarityName = rarityName,
+			icon = getPetIcon(pet),
 			rank = rank,
 			value = (tonumber(pet.EarningRate) or 0) * scaleFactor * mutationFactor,
 			weight = weight,
@@ -49705,15 +49949,26 @@ local nexEntry = function()
 			Name = "NexEgg",
 			Adornee = part,
 			AlwaysOnTop = true,
-			Size = UDim2.fromOffset(170, 40),
-			StudsOffset = Vector3.new(0, 4, 0),
+			Size = UDim2.fromOffset(170, 68),
+			StudsOffset = Vector3.new(0, 4.5, 0),
 			MaxDistance = MAX_ESP_DISTANCE,
 			Parent = NexEggPeek.espFolder,
 		})
 
+		local icon = create("ImageLabel", {
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			Size = UDim2.fromOffset(32, 32),
+			ScaleType = Enum.ScaleType.Fit,
+			Image = "",
+			Parent = gui,
+		})
+
 		local label = create("TextLabel", {
 			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(0, 34),
+			Size = UDim2.new(1, 0, 0, 34),
 			Font = Enum.Font.GothamBold,
 			TextSize = 13,
 			RichText = true,
@@ -49723,7 +49978,7 @@ local nexEntry = function()
 			Parent = gui,
 		})
 
-		return { gui = gui, label = label }
+		return { gui = gui, label = label, icon = icon }
 	end
 
 	---Sync the ESP billboards with the visible eggs.
@@ -49746,6 +50001,8 @@ local nexEntry = function()
 						entry = createBillboard(part)
 						NexEggPeek.espObjects[egg.uid] = entry
 					end
+
+					entry.icon.Image = egg.icon
 
 					entry.label.Text = string.format(
 						'<font color="#%s">%s</font>\n<font size="11" color="#FFFFFF">%s  •  %s</font>',
@@ -49791,10 +50048,41 @@ local nexEntry = function()
 
 		addCorner(bar, 2)
 
+		-- Pet picture like in the game.
+		local iconBox = create("Frame", {
+			BackgroundColor3 = THEME.surfaceHover,
+			Position = UDim2.fromOffset(14, 7),
+			Size = UDim2.fromOffset(44, 44),
+			Parent = card,
+		})
+
+		addCorner(iconBox, 8)
+		addStroke(iconBox, rarityColor, 1, 0.45)
+
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 18, 0, 6),
-			Size = UDim2.new(1, -96, 0, 18),
+			Size = UDim2.fromScale(1, 1),
+			Font = Enum.Font.GothamBlack,
+			Text = string.upper(string.sub(egg.name, 1, 1)),
+			TextColor3 = rarityColor,
+			TextSize = 18,
+			Parent = iconBox,
+		})
+
+		create("ImageLabel", {
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(1, -6, 1, -6),
+			ScaleType = Enum.ScaleType.Fit,
+			Image = egg.icon,
+			Parent = iconBox,
+		})
+
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 66, 0, 6),
+			Size = UDim2.new(1, -146, 0, 18),
 			Font = Enum.Font.GothamBold,
 			Text = egg.name,
 			TextColor3 = THEME.text,
@@ -49828,8 +50116,8 @@ local nexEntry = function()
 
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 18, 0, 26),
-			Size = UDim2.new(1, -28, 0, 14),
+			Position = UDim2.new(0, 66, 0, 26),
+			Size = UDim2.new(1, -76, 0, 14),
 			Font = Enum.Font.Gotham,
 			Text = details,
 			TextColor3 = THEME.subText,
@@ -49847,8 +50135,8 @@ local nexEntry = function()
 
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 18, 0, 40),
-			Size = UDim2.new(1, -28, 0, 14),
+			Position = UDim2.new(0, 66, 0, 40),
+			Size = UDim2.new(1, -76, 0, 14),
 			Font = Enum.Font.GothamMedium,
 			RichText = true,
 			Text = valueText,
@@ -50357,7 +50645,6 @@ local nexEntry = function()
 
 	-- Safely initialize the script as well as handle errors.
 	xpcall(initializeScript, onInitializeError)
-
 end
 local nexOk, nexErr = pcall(nexEntry)
 if not nexOk then warn("[NEX Egg Peek] " .. tostring(nexErr)) end
@@ -50378,6 +50665,7 @@ local nexHubEntry = function()
 	local tweenService = game:GetService("TweenService")
 	local userInputService = game:GetService("UserInputService")
 	local coreGui = game:GetService("CoreGui")
+	local playersService = game:GetService("Players")
 
 	-- Constants.
 	local SCRIPT_CREDIT = "NEX"
@@ -50414,7 +50702,6 @@ local nexHubEntry = function()
 		selectedKey = nil,
 		query = "",
 		expanded = {},
-		classicGuis = {},
 		classicVisible = false,
 		tabSignature = "",
 		searchToken = 0,
@@ -51316,17 +51603,39 @@ local nexHubEntry = function()
 		})
 	end
 
+	---Sections of a tab; the first tab also gets the Quick section (Anti Guard...) on top.
+	local function getSections(tab)
+		if tab ~= Ui.tabs[1] or #hub.quick == 0 then
+			return tab.sectionOrder
+		end
+
+		local sections = { { key = "__quick", display = "Quick", expanded = true, items = hub.quick } }
+
+		for _, section in ipairs(tab.sectionOrder) do
+			table.insert(sections, section)
+		end
+
+		return sections
+	end
+
 	---Count every feature that can be shown.
 	local function countFeatures()
 		local total = 0
 
 		for _, tab in ipairs(Ui.tabs) do
-			for _, section in ipairs(tab.sectionOrder) do
+			for _, section in ipairs(getSections(tab)) do
 				total = total + #section.items
 			end
 		end
 
 		return total
+	end
+
+	---Hide or show the original ChiliHub interface (the hook keeps it hidden from the first frame).
+	local function applyClassicVisibility()
+		if type(hub.setClassicHidden) == "function" then
+			hub.setClassicHidden(not Ui.classicVisible)
+		end
 	end
 
 	local render
@@ -51413,7 +51722,7 @@ local nexHubEntry = function()
 			local shown = 0
 
 			for _, tab in ipairs(Ui.tabs) do
-				for _, section in ipairs(tab.sectionOrder) do
+				for _, section in ipairs(getSections(tab)) do
 					for _, item in ipairs(section.items) do
 						if shown < MAX_SEARCH_RESULTS and matchesQuery(item, tab, section, query) then
 							shown = shown + 1
@@ -51442,7 +51751,7 @@ local nexHubEntry = function()
 			return
 		end
 
-		for _, section in ipairs(selected.sectionOrder) do
+		for _, section in ipairs(getSections(selected)) do
 			if #section.items > 0 then
 				order = order + 1
 				order = addSection(selected, section, order)
@@ -51456,9 +51765,30 @@ local nexHubEntry = function()
 		end)
 	end
 
+	---Turn the old on-screen Anti Guard panel off once; the NEX Hub has its own Anti Guard switch.
+	local function hideOldPanels()
+		if Ui.panelsHandled then
+			return
+		end
+
+		for _, tab in ipairs(hub.tabOrder) do
+			for _, section in ipairs(tab.sectionOrder) do
+				for _, item in ipairs(section.items) do
+					if item.kind == "toggle" and item.opts.Name == "Anti Guard Panel" and item.control then
+						Ui.panelsHandled = true
+						safeSet(item.control, false)
+						return
+					end
+				end
+			end
+		end
+	end
+
 	---Rebuild the tab chips when tabs or features change.
 	local function rebuildTabs()
 		local tabs = {}
+
+		hideOldPanels()
 
 		for _, tab in ipairs(hub.tabOrder) do
 			local total = 0
@@ -51485,6 +51815,21 @@ local nexHubEntry = function()
 		end)
 
 		Ui.tabs = tabs
+
+		-- Once features exist the NEX Hub is ready: the loader goes away and the old interface stays hidden.
+		if countFeatures() > 0 then
+			if not hub.ready then
+				hub.ready = true
+
+				if type(hub.finishLoading) == "function" then
+					hub.finishLoading()
+				end
+			end
+
+			if hub.hideClassic ~= (not Ui.classicVisible) then
+				applyClassicVisibility()
+			end
+		end
 
 		if not hub.tabs[Ui.selectedKey] or #hub.tabs[Ui.selectedKey].sectionOrder == 0 then
 			Ui.selectedKey = tabs[1] and tabs[1].key or nil
@@ -51544,47 +51889,6 @@ local nexHubEntry = function()
 		)
 
 		render()
-	end
-
-	---Find the original ChiliHub windows so they can be hidden or restored.
-	local function findClassicGuis()
-		local found = {}
-		local known = { Settings = true, ChilliLeftCenter = true, ChilliLibrarySettings = true, ChilliLibraryLauncher = true }
-		local containers = { coreGui }
-
-		if type(gethui) == "function" then
-			local success, container = pcall(gethui)
-			if success and container then
-				table.insert(containers, container)
-			end
-		end
-
-		for _, container in ipairs(containers) do
-			for _, child in ipairs(container:GetChildren()) do
-				if child:IsA("ScreenGui") and child ~= Ui.screenGui then
-					local owned = false
-
-					pcall(function()
-						owned = child:GetAttribute("ChilliLibraryOwned") == true
-					end)
-
-					if owned or known[child.Name] then
-						table.insert(found, child)
-					end
-				end
-			end
-		end
-
-		return found
-	end
-
-	---Show or hide the original interface.
-	local function applyClassicVisibility()
-		for _, gui in ipairs(Ui.classicGuis) do
-			pcall(function()
-				gui.Enabled = Ui.classicVisible
-			end)
-		end
 	end
 
 	---Let a handle drag a target around the screen.
@@ -51670,6 +51974,10 @@ local nexHubEntry = function()
 
 		Ui.classicVisible = true
 		applyClassicVisibility()
+
+		if type(hub.finishLoading) == "function" then
+			hub.finishLoading()
+		end
 
 		if Ui.screenGui then
 			Ui.screenGui:Destroy()
@@ -51980,26 +52288,6 @@ local nexHubEntry = function()
 		end)
 	end
 
-	---Hide the original interface once ours is ready.
-	local function hideClassicLater()
-		task.spawn(function()
-			for _, delay in ipairs({ 1.5, 4, 8 }) do
-				task.wait(delay)
-
-				if not Ui.running then
-					return
-				end
-
-				Ui.classicGuis = findClassicGuis()
-
-				-- Never hide the original interface when nothing could be mirrored.
-				if not Ui.classicVisible and countFeatures() > 0 then
-					applyClassicVisibility()
-				end
-			end
-		end)
-	end
-
 	---Initialize the interface.
 	local function initializeScript()
 		if shared and shared.NexHubUi then
@@ -52013,12 +52301,16 @@ local nexHubEntry = function()
 		buildInterface()
 		pcall(rebuildTabs)
 		startPolling()
-		hideClassicLater()
 	end
 
 	---This is called when initialization errors.
 	local function onInitializeError(error)
 		warn("[NEX Hub] failed to initialize.")
+
+		if type(hub.finishLoading) == "function" then
+			hub.finishLoading()
+		end
+
 		warn(error)
 		warn(debug.traceback())
 		Ui.detach()
