@@ -1,5 +1,5 @@
 -- Includes NEX Hub + NEX Egg Peek | (c) NEX - All rights reserved
--- NEX Hub hook: records every control ChiliHub creates so the NEX interface can mirror it.
+-- NEX Hub hook: records every control the script creates so the NEX interface can mirror it.
 do
 	local env = (type(getgenv) == "function" and getgenv()) or _G
 
@@ -7,6 +7,7 @@ do
 		tabs = {},
 		tabOrder = {},
 		quick = {},
+		randomNames = {},
 		version = 0,
 		instrumented = setmetatable({}, { __mode = "k" }),
 		recorded = setmetatable({}, { __mode = "k" }),
@@ -147,7 +148,7 @@ do
 		return record
 	end
 
-	-- Keep ChiliHub's original interface hidden from the very first frame (loading included).
+	-- Keep the original interface hidden from the very first frame (loading included).
 	local coreGui = game:GetService("CoreGui")
 	local playersService = game:GetService("Players")
 	local runService = game:GetService("RunService")
@@ -161,7 +162,7 @@ do
 	local frames = 0
 
 	local function isClassicGui(gui)
-		if string.sub(gui.Name, 1, 6) == "Chilli" then
+		if string.sub(gui.Name, 1, 6) == "Nexlab" then
 			return true
 		end
 
@@ -169,7 +170,7 @@ do
 
 		pcall(function()
 			for key in pairs(gui:GetAttributes()) do
-				if string.sub(key, 1, 18) == "ChilliLibraryOwned" then
+				if string.sub(key, 1, 18) == "NexlabLibraryOwned" then
 					owned = true
 				end
 			end
@@ -186,8 +187,8 @@ do
 		forcing = false
 	end
 
-	local function watch(gui)
-		if watched[gui] or not isClassicGui(gui) then
+	local function watch(gui, force)
+		if watched[gui] or (not force and not isClassicGui(gui)) then
 			return
 		end
 
@@ -210,6 +211,71 @@ do
 				setEnabled(gui, false)
 			end
 		end)
+	end
+
+	-- Panels the script builds with random names (Steal Panel, Anti Guard widget...) are found by their text.
+	local oldMarkers = { "Steal Panel", "Anti Guard" }
+	local trackedScriptGuis = setmetatable({}, { __mode = "k" })
+
+	local function hasOldText(gui)
+		local found = false
+
+		pcall(function()
+			for _, descendant in ipairs(gui:GetDescendants()) do
+				if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+					local text = descendant.Text
+
+					if type(text) == "string" then
+						for _, marker in ipairs(oldMarkers) do
+							if string.find(text, marker, 1, true) then
+								found = true
+								return
+							end
+						end
+					end
+				end
+			end
+		end)
+
+		return found
+	end
+
+	local function trackScriptGui(gui)
+		if trackedScriptGuis[gui] or not hub.randomNames[gui.Name] then
+			return
+		end
+
+		trackedScriptGuis[gui] = true
+
+		local pending = false
+
+		local function inspect()
+			if not watched[gui] and hasOldText(gui) then
+				watch(gui, true)
+			end
+		end
+
+		-- Check now, whenever something is added (debounced), and a few times while it builds.
+		inspect()
+
+		pcall(function()
+			gui.DescendantAdded:Connect(function()
+				if pending then
+					return
+				end
+
+				pending = true
+
+				task.delay(0.1, function()
+					pending = false
+					inspect()
+				end)
+			end)
+		end)
+
+		for _, delay in ipairs({ 0.3, 1, 3 }) do
+			task.delay(delay, inspect)
+		end
 	end
 
 	local function getContainers()
@@ -237,6 +303,7 @@ do
 			for _, child in ipairs(container:GetChildren()) do
 				if child:IsA("ScreenGui") then
 					watch(child)
+					trackScriptGui(child)
 				end
 			end
 		end
@@ -249,6 +316,7 @@ do
 				pcall(function()
 					if child:IsA("ScreenGui") then
 						watch(child)
+						trackScriptGui(child)
 					end
 				end)
 			end)
@@ -267,7 +335,7 @@ do
 
 	pcall(sweep)
 
-	---Hide or restore the original ChiliHub interface.
+	---Hide or restore the original interface.
 	function hub.setClassicHidden(hidden)
 		hub.hideClassic = hidden
 
@@ -276,7 +344,7 @@ do
 		end
 	end
 
-	-- Small NEX loader so the screen is never empty while ChiliHub loads.
+	-- Small NEX loader so the screen is never empty while the script loads.
 	local loader = nil
 
 	pcall(function()
@@ -383,11 +451,11 @@ do
 	end
 end
 
-local ChilliLibrary
+local NexlabLibrary
 do
     local SetupLoadingScreenOverlay = function()
         local F=typeof(getgenv)=="function"and getgenv()or _G;
-        F.ChilliCanvasHold=true;
+        F.NexlabCanvasHold=true;
         local O=game:GetService("CoreGui");
         pcall(function()
             local I=gethui();
@@ -395,11 +463,11 @@ do
             if d then O=I;
             end;
         end);
-        local I=O:FindFirstChild("ChilliHubLoading");
+        local I=O:FindFirstChild("NexlabHubLoading");
         if I then I:Destroy();
         end;
         local d=Instance.new("ScreenGui");
-        d.Name="ChilliHubLoading";
+        d.Name="NexlabHubLoading";
         d.ResetOnSpawn=false;
         d.IgnoreGuiInset=true;
         d.DisplayOrder=1000;
@@ -424,7 +492,7 @@ do
         o.TextSize=15;
         o.TextColor3=Color3.fromRGB(255,255,255);
         o.TextXAlignment=Enum.TextXAlignment.Left;
-        o.Text="Chilli Hub";
+        o.Text="NEX Hub";
         o.Parent=I;
         local N=Instance.new("TextLabel");
         N.BackgroundTransparency=1;
@@ -459,21 +527,21 @@ do
         Instance.new("UICorner",I).CornerRadius=UDim.new(1,0);
         Instance.new("UIGradient",I).Color=ColorSequence.new(Color3.fromRGB(255,50,50),Color3.fromRGB(255,150,60));
         d.Parent=O;
-        local O,o="ChilliLibrary/SAE_LoadProgress.txt";
+        local O,o="NexlabLibrary/SAE_LoadProgress.txt";
         pcall(function()
             local i=isfile(O);
             if i then o=tonumber(string.match(readfile(O),"^(%d+)"));
             end;
         end);
         local function i(k)pcall(function()
-            if not(isfolder("ChilliLibrary"))then makefolder("ChilliLibrary");
+            if not(isfolder("NexlabLibrary"))then makefolder("NexlabLibrary");
             end;
             writefile(O,tostring(k).." "..tostring(os.time()));
         end);
     end;
     i(0);
-    F.ChilliHubLoading=os.clock()+30;
-    F.ChilliHubLoadStep=function(O)
+    F.NexlabHubLoading=os.clock()+30;
+    F.NexlabHubLoadStep=function(O)
         local k=math.clamp(math.floor(tonumber(O)or 0),0,10);
         i(k);
         pcall(function()
@@ -483,9 +551,9 @@ do
         end);
         task.wait(0.05);
         local O=k>=10;
-        if O then F.ChilliHubLoadStep=nil;
-            F.ChilliCanvasHold=nil;
-            F.ChilliHubLoading=nil;
+        if O then F.NexlabHubLoadStep=nil;
+            F.NexlabCanvasHold=nil;
+            F.NexlabHubLoading=nil;
             local F=o and o<10;
             if F then pcall(function()
                 t.Text="Last load stopped at "..tostring(o*10).."% (part "..tostring(o+1).." / 10)";
@@ -506,10 +574,10 @@ end
 SetupLoadingScreenOverlay()
 local LogBootstrapWarning = function(F)
     local O=typeof(getgenv)=="function"and getgenv()or _G;
-    if type(O.ChilliDebugPrint)=="function"then pcall(O.ChilliDebugPrint,F);
+    if type(O.NexlabDebugPrint)=="function"then pcall(O.NexlabDebugPrint,F);
     end;
 end
-local LoadChilliLibrary = function()
+local LoadNexlabLibrary = function()
     local loc_2 = function()
         local tmp_2 = function(O,I)
             local d={};
@@ -535,7 +603,7 @@ local LoadChilliLibrary = function()
                         table.move(d, 1, d.n, I + 1, O) end) (d[24],0,workspace.CurrentCamera);
                         d[24].n=1;
                         d[6]=d[24][1];
-                        assert(d[1],"ChilliLibrary chi co the chay mot lan o phia client");
+                        assert(d[1],"NexlabLibrary chi co the chay mot lan o phia client");
                         d[25]={};
                         (function(F, O, I) for d = 1, I.n, 1 do F[O + d] = I[d] end;
                         F.n = O + I.n end) (d[25],0, table.pack (d[1]:WaitForChild("PlayerGui")));
@@ -557,19 +625,19 @@ local LoadChilliLibrary = function()
                             end;
                         end;
                     end;
-                    d[8].T="Chilli Hub";
+                    d[8].T="NEX Hub";
                     if type(d[8].Title)=="string"then if d[8].Title~=""then d[29]=d[8].Title;
                         d[8].T=d[29];
                     end;
                 end;
                 d[30]={};
-                d[31]=d[8].N and"ChilliUI_"..d[8].N or"Settings";
+                d[31]=d[8].N and"NexlabUI_"..d[8].N or"Settings";
                 (function(O, I, ...) local d = table.pack(...);
                     table.move(d, 1, d.n, I + 1, O) end) (d[30],0,d[31]);
-                    d[32]=d[8].N and"ChilliLeft_"..d[8].N or"ChilliLeftCenter";
+                    d[32]=d[8].N and"NexlabLeft_"..d[8].N or"NexlabLeftCenter";
                     (function(O, I, ...) local d = table.pack(...);
                         table.move(d, 1, d.n, I + 1, O) end) (d[30],1,d[32]);
-                        d[33]=d[8].N and"ChilliLibraryOwned_"..d[8].N or"ChilliLibraryOwned";
+                        d[33]=d[8].N and"NexlabLibraryOwned_"..d[8].N or"NexlabLibraryOwned";
                         (function(O, I, ...) local d = table.pack(...);
                             table.move(d, 1, d.n, I + 1, O) end) (d[30],2,d[33],"CoreGui");
                             d[30].n=4;
@@ -587,14 +655,14 @@ local LoadChilliLibrary = function()
                         d[35]= table.pack (pcall(function()
                             local I={};
                             local o=Instance.new("ScreenGui");
-                            o.Name="ChilliLibraryUIProbe";
+                            o.Name="NexlabLibraryUIProbe";
                             I[1]=d[15];
                             o.Parent=I[1];
                             o:Destroy();
                         end));
                         d[14]=d[35][1];
                         d[1]=d[35][2];
-                        if not d[14]then error("ChilliLibrary requires write access to "..d[12].."; PlayerGui fallback is disabled: "..tostring(d[1]),0);
+                        if not d[14]then error("NexlabLibrary requires write access to "..d[12].."; PlayerGui fallback is disabled: "..tostring(d[1]),0);
                         end;
                         d[16]=function()
                             local I=Instance.new("MeshPart");
@@ -639,8 +707,8 @@ local LoadChilliLibrary = function()
                             table.move(d, 1, d.n, I + 1, O) end) (d[36],0,d[37]);
                             d[36].n=1;
                             d[17]=d[36][1];
-                            if not(d[8].N)then d[17].ChilliLibrarySettings=true;
-                                d[17].ChilliLibraryLauncher=true;
+                            if not(d[8].N)then d[17].NexlabLibrarySettings=true;
+                                d[17].NexlabLibraryLauncher=true;
                             end;
                             (function(I,o)
                                 for N,t in ipairs(d[15]:GetChildren())do if t~=I and t~=o and t:IsA("ScreenGui")and d[17][t.Name]then local I,o,i=t:GetAttribute("HudRestorePosition"),t:GetAttribute("LeftCenterHiddenByLibrary")==true,t:GetAttribute("LeftCenterScreenDisabledByLibrary")==true;
@@ -675,7 +743,7 @@ local LoadChilliLibrary = function()
             pcall(d[18],d[19].obj1,"Archivable",true);
             d[19].obj1:SetAttribute("MenuSize",UDim2.new(0.44999998807907104,0,0.550000011920929,0));
             d[19].obj1:SetAttribute(d[11],true);
-            if d[8].N then d[19].obj1:SetAttribute("ChilliNamespace",d[8].N);
+            if d[8].N then d[19].obj1:SetAttribute("NexlabNamespace",d[8].N);
             end;
             d[40]=d[19].obj1;
             d[40].Parent=d[15];
@@ -1228,7 +1296,7 @@ local LoadChilliLibrary = function()
     I.ResetOnSpawn=false;
     I.IgnoreGuiInset=true;
     I.ZIndexBehavior=Enum.ZIndexBehavior.Sibling;
-    do local Y,e,Z={ChilliAutoGetTargetPanel=true,ChilliAutoGetBarGui=true,ChilliFpsPingGui=true},setmetatable,{__mode="k"};
+    do local Y,e,Z={NexlabAutoGetTargetPanel=true,NexlabAutoGetBarGui=true,NexlabFpsPingGui=true},setmetatable,{__mode="k"};
         local R=e({},Z);
         local function e(Z,W)if R[W]then return;
         elseif not(W:IsA("GuiObject"))then return;
@@ -1298,7 +1366,7 @@ local e,Z,R,W,m,L=Y();
 local j=Z;
 local X,U,a=j and Z.Position or UDim2.fromScale(0,0.5);
 local g=0;
-i.chilliIsOpen=false;
+i.nexlabIsOpen=false;
 local function M()local f=a;
     if f then a:Disconnect();
         a=nil;
@@ -1315,7 +1383,7 @@ f.IgnoreGuiInset=e and e.IgnoreGuiInset or false;
 f.ZIndexBehavior=Enum.ZIndexBehavior.Sibling;
 f.DisplayOrder=e and e.DisplayOrder or 0;
 f:SetAttribute(d[11],true);
-if d[8].N then f:SetAttribute("ChilliNamespace",d[8].N);
+if d[8].N then f:SetAttribute("NexlabNamespace",d[8].N);
 end;
 if e then pcall(function()
     f.ScreenInsets=e.ScreenInsets;
@@ -1323,8 +1391,7 @@ if e then pcall(function()
     f.ClipToDeviceSafeArea=e.ClipToDeviceSafeArea;
 end);
 end;
-if game.GameId~=7709344486 then f.Enabled=false;
-end;
+f.Enabled=false;
 f.Parent=d[15];
 local T=Instance.new("Frame");
 T.Name="LeftCenter";
@@ -1355,7 +1422,7 @@ J.AspectType=D and D.AspectType or Enum.AspectType.FitWithinMaxSize;
 J.DominantAxis=D and D.DominantAxis or Enum.DominantAxis.Width;
 J.Parent=E;
 local G=Instance.new("ImageButton");
-G.Name="Chilli";
+G.Name="NEX";
 G.AnchorPoint=Vector2.new(0.5,0.5);
 G.Position=W and UDim2.fromScale(0.5,0)or UDim2.fromScale(0.42,-0.1885267);
 G.Size=W and UDim2.fromScale(1,0.3)or UDim2.fromScale(1,0.3015267);
@@ -1390,7 +1457,7 @@ pcall(function()
 end);
 P.Parent=G;
 local p=Instance.new("ViewportFrame");
-p.Name="ChilliViewport";
+p.Name="NexlabViewport";
 p.AnchorPoint=m and m.AnchorPoint or Vector2.new(0.5,0.5);
 p.Position=m and m.Position or UDim2.fromScale(0.5,0.5);
 p.Size=m and m.Size or UDim2.fromScale(0.76055,0.76055);
@@ -1558,7 +1625,7 @@ local function B()local _=s.CFrame;
                 end;
             else n=l;
             end;
-            n=f:GetAttribute("QuickHudHidden")==true or i.chilliIsOpen or w or n;
+            n=f:GetAttribute("QuickHudHidden")==true or i.nexlabIsOpen or w or n;
             if f:GetAttribute("EffectiveLeftCenterHidden")~=n then f:SetAttribute("EffectiveLeftCenterHidden",n);
             end;
         end;
@@ -1658,7 +1725,7 @@ X=if typeof(u)=="UDim2"then u else j.Position;
         end;
         X=UDim2.new(X.X.Scale+1,X.X.Offset,X.Y.Scale,X.Y.Offset);
     end;
-    n=i.chilliIsOpen or f:GetAttribute("QuickHudHidden")==true;
+    n=i.nexlabIsOpen or f:GetAttribute("QuickHudHidden")==true;
     if n then x=j;
         x.Position=q(X);
         f:SetAttribute("HudRestorePosition",X);
@@ -1671,9 +1738,9 @@ X=if typeof(u)=="UDim2"then u else j.Position;
     else j.Position=X;
         f:SetAttribute("HudRestorePosition",nil);
     end;
-    T.Position=i.chilliIsOpen and q(X)or X;
+    T.Position=i.nexlabIsOpen and q(X)or X;
     C(j:GetPropertyChangedSignal("Position"),function()
-        local h=f:GetAttribute("QuickHudHidden")==true or i.chilliIsOpen;
+        local h=f:GetAttribute("QuickHudHidden")==true or i.nexlabIsOpen;
         if h then local h=U;
             if not(h)then local h=q(X);
                 local S=j.Position~=h;
@@ -1733,7 +1800,7 @@ z(d[7].DescendantAdded:Connect(function()
         w(Z,R,W,m,L,h);
     end;
 end));
-local Y="ChilliLibraryLeftCenterRenderGuard"..(d[8].N and"_"..d[8].N or"");
+local Y="NexlabLibraryLeftCenterRenderGuard"..(d[8].N and"_"..d[8].N or"");
 local function Z()local R=I.Parent;
     if R then local W=j;
         if W then local W=j;
@@ -1769,7 +1836,7 @@ local function Z()local R=I.Parent;
     W=U;
     if W then return;
     end;
-    if not R then if not(i.chilliIsOpen)then return;
+    if not R then if not(i.nexlabIsOpen)then return;
     end;
 end;
 R=q(X);
@@ -2086,7 +2153,7 @@ local function Z(m)local r={};
         end;
         U=nil;
         r=f:GetAttribute("QuickHudHidden")==true;
-        local U=r or i.chilliIsOpen;
+        local U=r or i.nexlabIsOpen;
         if U then local U=j;
             if U then local a=j;
                 a.Position=q(X);
@@ -2152,12 +2219,12 @@ local function U(a,T,r)m();
     end);
     _:Play();
 end;
-local function a(T)if i.chilliIsOpen then return;
+local function a(T)if i.nexlabIsOpen then return;
 end;
 local P=V~=nil;
 J=true;
 i.windowAnimating=true;
-i.chilliIsOpen=true;
+i.nexlabIsOpen=true;
 Z(true);
 if not(P)then o.Position=S();
 end;
@@ -2169,13 +2236,13 @@ U(i.windowRestPosition,TweenInfo.new(E,Enum.EasingStyle.Quart,Enum.EasingDirecti
     end;
 end);
 end;
-local function T()if not(i.chilliIsOpen)then return;
+local function T()if not(i.nexlabIsOpen)then return;
 end;
 if i.windowDragController then i.windowDragController.Cancel();
 end;
 J=true;
 i.windowAnimating=true;
-i.chilliIsOpen=false;
+i.nexlabIsOpen=false;
 Z(f:GetAttribute("QuickHudHidden")==true);
 o.Size=i.menuSize;
 U(h(),TweenInfo.new(D,Enum.EasingStyle.Quart,Enum.EasingDirection.In),function()
@@ -3754,7 +3821,7 @@ else nil;
         kk=vr:FindFirstChildOfClass("UIAspectRatioConstraint");
         if kk then kk.AspectRatio=zk and y or C;
         end;
-        vr:SetAttribute("ChilliResponsiveAspect",zk and y or C);
+        vr:SetAttribute("NexlabResponsiveAspect",zk and y or C);
         Qr.PaddingRight=UDim.new(ik and math.min(0.45,0.034/math.max(ok,0.001))or 0,0);
     end;
     local function Br()if lr:IsFocused()then return;
@@ -4426,7 +4493,7 @@ local function Or(Yr)local zr=tostring(Yr.Text or Yr.Value or Yr.Name);
         mr=zr~="";
         Rr.Text=zr;
         Rr.Visible=mr;
-        Ar:SetAttribute("ChilliResponsiveAspect",mr and y or C);
+        Ar:SetAttribute("NexlabResponsiveAspect",mr and y or C);
         if mr then Zr.Position=UDim2.fromScale(0.025,0.34);
             Zr.Size=UDim2.fromScale(0.94,0.64*er*Fr);
         else Zr.Position=UDim2.fromScale(0.025,0.5);
@@ -4455,7 +4522,7 @@ local function zr(Ar,er,Rr)local Wr,mr,Lr=y/C,Ar:FindFirstChildOfClass("UIAspect
     assert(jr and jr:IsA("TextLabel"),"Button row thieu Label");
     if mr then mr.AspectRatio=y;
     end;
-    Ar:SetAttribute("ChilliResponsiveAspect",y);
+    Ar:SetAttribute("NexlabResponsiveAspect",y);
     jr.Position=UDim2.fromScale(0.025,0.34);
     jr.Size=UDim2.fromScale(0.62,0.64*Wr*Fr);
     local jr=Instance.new("TextLabel");
@@ -4541,7 +4608,7 @@ local function Ar(er)local Rr,Wr=n(er.Name,er.Name,tostring(er.ButtonText or er.
             if jr then if jr.Parent then jr.AspectRatio=Ur and y or C;
             end;
         end;
-        er:SetAttribute("ChilliResponsiveAspect",Ur and y or C);
+        er:SetAttribute("NexlabResponsiveAspect",Ur and y or C);
         if Ur then mr.Position=UDim2.fromScale(0.025,0.34);
             mr.Size=UDim2.fromScale(0.65,0.64*Xr*Fr);
             Lr.Size=UDim2.fromScale(w.WideWidth,0.62*Xr);
@@ -6144,7 +6211,7 @@ local function nr(xr)local br=Instance.new("UIStroke");
     br.Parent=xr;
     return br;
 end;
-local function xr(br,ur)local yr=br:FindFirstChild("ChilliGradient");
+local function xr(br,ur)local yr=br:FindFirstChild("NexlabGradient");
     if ur==nil then if yr then yr:Destroy();
     end;
     return;
@@ -6154,7 +6221,7 @@ end;
 local Fk,Ok=pcall(function()
     return ur:Clone();
 end);
-if Fk then if Ok then Ok.Name="ChilliGradient";
+if Fk then if Ok then Ok.Name="NexlabGradient";
     Ok.Parent=br;
 end;
 end;
@@ -6164,7 +6231,7 @@ end;
 if typeof(ur)=="ColorSequence"then local Fk;
     if yr then Fk=yr;
     else Fk=Instance.new("UIGradient");
-        Fk.Name="ChilliGradient";
+        Fk.Name="NexlabGradient";
         Fk.Parent=br;
     end;
     Fk.Color=ur;
@@ -6185,7 +6252,7 @@ local function br(ur)local yr={};
     ur=Ik:FindFirstChildOfClass("UIAspectRatioConstraint");
     if ur then ur:Destroy();
     end;
-    Ik:SetAttribute("ChilliResponsiveAspect",nil);
+    Ik:SetAttribute("NexlabResponsiveAspect",nil);
     Ik.ClipsDescendants=false;
     Ik.Size=UDim2.new(K,0,0,1);
     local ur=Ik:FindFirstChild("Main");
@@ -7002,7 +7069,7 @@ else end;
 end;
 return rr;
 end;
-local function pr(sr,rr,Br)local _r=sr:FindFirstChild("ChilliCanvasGradient");
+local function pr(sr,rr,Br)local _r=sr:FindFirstChild("NexlabCanvasGradient");
     if rr==nil then if _r then _r:Destroy();
     end;
     return;
@@ -7012,7 +7079,7 @@ end;
 local qr,vr=pcall(function()
     return rr:Clone();
 end);
-if qr then if vr then vr.Name="ChilliCanvasGradient";
+if qr then if vr then vr.Name="NexlabCanvasGradient";
     if Br~=nil then vr.Rotation=Br;
     end;
     vr.Parent=sr;
@@ -7024,7 +7091,7 @@ end;
 if typeof(rr)=="ColorSequence"then local qr;
     if _r then qr=_r;
     else qr=Instance.new("UIGradient");
-        qr.Name="ChilliCanvasGradient";
+        qr.Name="NexlabCanvasGradient";
         qr.Parent=sr;
     end;
     qr.Color=rr;
@@ -7487,7 +7554,7 @@ local function kr(sr)local rr={};
     local Or=nr:FindFirstChildOfClass("UIAspectRatioConstraint");
     if Or then Or:Destroy();
     end;
-    nr:SetAttribute("ChilliResponsiveAspect",nil);
+    nr:SetAttribute("NexlabResponsiveAspect",nil);
     nr.ClipsDescendants=false;
     nr.Size=UDim2.new(K,0,0,1);
     local xr=nr:FindFirstChild("Main");
@@ -7720,7 +7787,7 @@ end;
 br=Kr._dirty;
 if br then local n=Gr;
     if n then local n=os.clock()-Br>=0.1;
-        if n then local n=(typeof(getgenv)=="function"and getgenv()or _G).ChilliCanvasHold~=true;
+        if n then local n=(typeof(getgenv)=="function"and getgenv()or _G).NexlabCanvasHold~=true;
             if n then Kr._dirty=false;
                 Br=os.clock();
                 if not(pcall(ik))then Kr._dirty=true;
@@ -8374,7 +8441,7 @@ Lr[102]=function(F)
     Ur(F,"Window");
     a(function()
         if F._destroyed then return;
-        elseif not(i.chilliIsOpen)then return;
+        elseif not(i.nexlabIsOpen)then return;
         end;
         local a=F.SelectedTab;
         if a and not a._destroyed then for P,P in ipairs(a.Sections)do if P._refreshLayout then P._refreshLayout();
@@ -8393,7 +8460,7 @@ Lr[103]=function(F)
 end;
 Lr[104]=function(F)
     Ur(F,"Window");
-    if i.chilliIsOpen then return Lr[103](F);
+    if i.nexlabIsOpen then return Lr[103](F);
     end;
     return Lr[102](F);
 end;
@@ -8512,8 +8579,8 @@ if f.Parent then f:Destroy();
 end;
 end;
 Lr[106]=function(A,e)
-    assert(not A.Window,"ChilliLibrary chi quan ly 1 Window cho UI nay");
-    local m=u(e or{Name="Chilli Hub"},"Chilli Hub");
+    assert(not A.Window,"NexlabLibrary chi quan ly 1 Window cho UI nay");
+    local m=u(e or{Name="NEX Hub"},"NEX Hub");
     local e=setmetatable({_kind="Window",_destroyed=false,_exclusiveGroupByName={},_stateObjects=setmetatable({},{__mode="k"}),_stateByName={},_tabByName={},ExclusiveGroups={},Name=m.Name,SelectedTab=nil,States={},Tabs={}},D);
     A.Window=e;
     function s.ReflowTabs()if not(e._destroyed)then Lr[93](e);
@@ -8983,7 +9050,7 @@ er=if er<=0 then dr.Tab.Page.AbsoluteSize.X else er;
     if er<=0 then return;
     end;
     local Zr=S.X;
-    local Rr,Wr=er*kr/Zr+Yr,tonumber(Nr:GetAttribute("ChilliResponsiveAspect"))or ir;
+    local Rr,Wr=er*kr/Zr+Yr,tonumber(Nr:GetAttribute("NexlabResponsiveAspect"))or ir;
     Wr=math.max(0.001,Wr);
     local ir,er=math.max(1,math.floor(Rr/Wr+0.5)),if D then kr/Zr else kr;
         Zr=math.abs(ir-zr)>=1 or math.abs(er-Ar)>1.0E-6;
@@ -8998,7 +9065,7 @@ er=if er<=0 then dr.Tab.Page.AbsoluteSize.X else er;
         end;
         tr();
     end);
-    local D={dr._content:GetPropertyChangedSignal("AbsoluteSize"):Connect(tr),dr.Tab.Page:GetPropertyChangedSignal("AbsoluteSize"):Connect(tr),Nr:GetAttributeChangedSignal("ChilliResponsiveAspect"):Connect(tr)};
+    local D={dr._content:GetPropertyChangedSignal("AbsoluteSize"):Connect(tr),dr.Tab.Page:GetPropertyChangedSignal("AbsoluteSize"):Connect(tr),Nr:GetAttributeChangedSignal("NexlabResponsiveAspect"):Connect(tr)};
     table.insert(dr._rowUpdaters,tr);
     tr(true);
     task.defer(function()
@@ -9015,7 +9082,7 @@ er=if er<=0 then dr.Tab.Page.AbsoluteSize.X else er;
     end;
 end;
 end;
-local D,dr="__ChilliSearchResults";
+local D,dr="__NexlabSearchResults";
 local Nr,tr="Other Tabs",30;
 local function ir(kr)local Yr=tostring(kr.DisplayName or kr.Name);
     if Yr:lower():sub(-4)==" tab"then return Yr;
@@ -9253,11 +9320,11 @@ elseif Wr.Parent then if not(Wr.Visible)then return;
 end;
 else return;
 end;
-er=Wr:FindFirstChild("ChilliSearchNavigationHighlight");
+er=Wr:FindFirstChild("NexlabSearchNavigationHighlight");
 if er then er:Destroy();
 end;
 local zr=Instance.new("UIStroke");
-zr.Name="ChilliSearchNavigationHighlight";
+zr.Name="NexlabSearchNavigationHighlight";
 zr.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;
 zr.Color=H;
 zr.LineJoinMode=Enum.LineJoinMode.Round;
@@ -9355,7 +9422,7 @@ local function zr()local Ar=Nr;
         end;
     end;
     Nr=Instance.new("Frame");
-    Nr.Name="ChilliNotifyHolder";
+    Nr.Name="NexlabNotifyHolder";
     Nr.Active=false;
     Ar=Nr;
     Ar.AnchorPoint=Vector2.new(1,1);
@@ -9468,7 +9535,7 @@ b.Notify=function(Nr,Ar,Zr)
     Yr.ZIndex=100;
     Yr.Parent=Rr;
     Rr=Instance.new("Frame");
-    Rr.Name="ChilliNotify";
+    Rr.Name="NexlabNotify";
     Rr.Active=false;
     Rr.AnchorPoint=Vector2.new(1,0.5);
     Rr.BackgroundColor3=Color3.fromRGB(0,0,0);
@@ -9560,7 +9627,7 @@ b.Notify=function(Nr,Ar,Zr)
     return Rr;
 end;
 b.Finalize=function(D,s)
-    assert(not D._finalized,"ChilliLibrary:Finalize() chi duoc goi mot lan");
+    assert(not D._finalized,"NexlabLibrary:Finalize() chi duoc goi mot lan");
     s=type(s)=="table"and s or{};
     local r=s.Window or D.Window;
     local x=s.MainTab or r and r.DefaultTab;
@@ -9569,7 +9636,7 @@ b.Finalize=function(D,s)
     assert(x,"Finalize can MainTab");
     D._finalized=true;
     local function s()local Nr=game:GetService("HttpService");
-        local tr=u.ConfigFolder or"ChilliLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId);
+        local tr=u.ConfigFolder or"NexlabLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId);
         local kr=tr.."/configs";
         local Yr=string.gsub(kr,"%p","%%%0");
         local zr,Ar,er=tr.."/config_state.json","Default",_G;
@@ -9717,12 +9784,12 @@ local Mr={Active=Ar,AutoLoad=true,AutoSave=true,Loading=false,Startup=Ar};
 (function()
     if not(Rr.Available)then return;
     end;
-    pcall(Rr.MakeFolder,"ChilliLibrary");
-    pcall(Rr.MakeFolder,"ChilliLibrary/Games");
+    pcall(Rr.MakeFolder,"NexlabLibrary");
+    pcall(Rr.MakeFolder,"NexlabLibrary/Games");
     pcall(Rr.MakeFolder,tr);
     pcall(Rr.MakeFolder,kr);
-    if tr~="ChilliLibrary"then if not(pcall(Rr.Read,zr))then local tr,fr=pcall(Rr.Read,"ChilliLibrary/config_state.json");
-        if tr and type(fr)=="string"and fr~=""then if Rr.CanList then local tr,Tr=pcall(Rr.List,"ChilliLibrary/configs");
+    if tr~="NexlabLibrary"then if not(pcall(Rr.Read,zr))then local tr,fr=pcall(Rr.Read,"NexlabLibrary/config_state.json");
+        if tr and type(fr)=="string"and fr~=""then if Rr.CanList then local tr,Tr=pcall(Rr.List,"NexlabLibrary/configs");
             if tr and type(Tr)=="table"then for tr,hr in ipairs(Tr)do tr=string.match(tostring(hr),"([^/\\]+)$");
                 if tr then if string.sub(tr,-5)==".json"then local Tr,Sr=pcall(Rr.Read,hr);
                     if Tr then if type(Sr)=="string"then pcall(Rr.Write,kr.."/"..tr,Sr);
@@ -9732,7 +9799,7 @@ local Mr={Active=Ar,AutoLoad=true,AutoSave=true,Loading=false,Startup=Ar};
         end;
     end;
 end;
-else local tr,Tr=pcall(Rr.Read,"ChilliLibrary/configs/Default.json");
+else local tr,Tr=pcall(Rr.Read,"NexlabLibrary/configs/Default.json");
     if tr then if type(Tr)=="string"then pcall(Rr.Write,kr.."/Default.json",Tr);
     end;
 end;
@@ -10011,7 +10078,7 @@ local function n(Lr)Lr._configIgnored=true;
 end;
 return Lr;
 end;
-local Lr,Kr,wr="ChilliLibraryConfig",1,1048576;
+local Lr,Kr,wr="NexlabLibraryConfig",1,1048576;
 local lr,Qr=Zr("setclipboard")or Zr("toclipboard")or Zr("set_clipboard")or Zr("writeclipboard");
 do local nr=type(er)=="table"and er.Clipboard or nil;
     if lr then else if type(nr)=="table"then if type(nr.set)=="function"then local function er(xr)return nr.set(xr);
@@ -10065,7 +10132,7 @@ end;
 wr,nr=nil;
 if xr.Format==Lr and type(xr.Config)=="table"then wr,nr=xr.Name or xr.Profile or xr.Config.Profile,xr.Config;
 else if type(xr.Values)=="table"or type(xr.States)=="table"then wr=xr.Profile;
-else return nil,nil,"JSON is not a Chilli config export.";
+else return nil,nil,"JSON is not a NEX config export.";
 end;
 nr=xr;
 end;
@@ -10370,7 +10437,7 @@ else Br("Ready. Startup "..Mr.Startup.."; Active "..Mr.Active);
 end;
 end);
 end;
-local function n()local Nr,tr,kr,Yr,zr,Ar,er,Zr,Rr,Wr,mr,Lr=u.Namespace and"ChilliQuick_"..u.Namespace or"ChilliQuickBar",{button=true,toggle=true,switch=true,slider=true,slidebar=true,input=true,textbox=true},{button=true,toggle=true,switch=true},5,0.078,0.032,0.022,0.005,{0.023,0.303,0.7},{0.023,0.023,0.42},0.24,0.1;
+local function n()local Nr,tr,kr,Yr,zr,Ar,er,Zr,Rr,Wr,mr,Lr=u.Namespace and"NexlabQuick_"..u.Namespace or"NexlabQuickBar",{button=true,toggle=true,switch=true,slider=true,slidebar=true,input=true,textbox=true},{button=true,toggle=true,switch=true},5,0.078,0.032,0.022,0.005,{0.023,0.303,0.7},{0.023,0.023,0.42},0.24,0.1;
     local jr=Y.TouchEnabled and not Y.KeyboardEnabled and not Y.MouseEnabled;
     local Xr=jr and 150 or 120;
     local Ur,ar,gr=Xr/100,{true,true,true,true,true},{Zero="0",One="1",Two="2",Three="3",Four="4",Five="5",Six="6",Seven="7",Eight="8",Nine="9",KeypadZero="Num0",KeypadOne="Num1",KeypadTwo="Num2",KeypadThree="Num3",KeypadFour="Num4",KeypadFive="Num5",KeypadSix="Num6",KeypadSeven="Num7",KeypadEight="Num8",KeypadNine="Num9",LeftControl="LCtrl",RightControl="RCtrl",LeftShift="LShift",RightShift="RShift",LeftAlt="LAlt",RightAlt="RAlt",Return="Enter",Space="Space",Backspace="Back"};
@@ -10752,7 +10819,7 @@ q.DisplayOrder=5;
 W.DisplayOrder=q.DisplayOrder+1;
 q.Enabled=false;
 q:SetAttribute(e,true);
-if u.Namespace then q:SetAttribute("ChilliNamespace",u.Namespace);
+if u.Namespace then q:SetAttribute("NexlabNamespace",u.Namespace);
 end;
 q.Parent=Z;
 local e,Z=0.03,0.97;
@@ -11406,7 +11473,7 @@ for _,K in ipairs(dr)do _=Instance.new("Frame");
 end;
 local function _(K)Ik=Hr:Get()==true;
     U:SetAttribute("QuickHudHidden",Ik);
-    E(Ik or k.chilliIsOpen);
+    E(Ik or k.nexlabIsOpen);
     local U=Ik and-90 or 90;
     if K then z:Create(G,TweenInfo.new(0.22,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Rotation=U}):Play();
     else G.Rotation=U;
@@ -11483,7 +11550,7 @@ local function jr(ar,hr,Sr,Jr)local Gr,Vr=false;
     Pr.Parent=ar;
     local function pr(sr)local Hr=v+(b-v)*sr;
         local b=v/Hr;
-        ar:SetAttribute("ChilliResponsiveAspect",Hr);
+        ar:SetAttribute("NexlabResponsiveAspect",Hr);
         hr.Size=UDim2.fromScale(1,0.85/b);
         hr.Position=UDim2.fromScale(0.5,0.5/b);
         Hr=0.925/b;
@@ -11918,7 +11985,7 @@ else r:Open();
 end;
 end);
 k.windowDragController=M(L,m,function()
-    return k.chilliIsOpen and not k.windowAnimating;
+    return k.nexlabIsOpen and not k.windowAnimating;
 end,function(Y)
 k.windowRestPosition=Y;
 end);
@@ -11977,16 +12044,16 @@ return tmp_2
 end
 local loc_12 = loc_2()
         local loc_15 = function()
-            if type(loc_17) == "table" and type(loc_17.ChilliHubSaeCleanup) == "function" then
-                local prevCleanup = loc_17.ChilliHubSaeCleanup
-                loc_17.ChilliHubSaeCleanup = nil
+            if type(loc_17) == "table" and type(loc_17.NexlabHubSaeCleanup) == "function" then
+                local prevCleanup = loc_17.NexlabHubSaeCleanup
+                loc_17.NexlabHubSaeCleanup = nil
                 pcall(prevCleanup)
             end
             local knownGuiNames = {
                 Settings = true,
-                ChilliLeftCenter = true,
-                ChilliLibrarySettings = true,
-                ChilliLibraryLauncher = true,
+                NexlabLeftCenter = true,
+                NexlabLibrarySettings = true,
+                NexlabLibraryLauncher = true,
             }
             local containers = {}
             local okCore, coreGui = pcall(game.GetService, game, "CoreGui")
@@ -12006,7 +12073,7 @@ local loc_12 = loc_2()
                         if child:IsA("ScreenGui") then
                             local owned = false
                             pcall(function()
-                                owned = child:GetAttribute("ChilliLibraryOwned") == true
+                                owned = child:GetAttribute("NexlabLibraryOwned") == true
                             end)
                             if owned or knownGuiNames[child.Name] then
                                 pcall(child.Destroy, child)
@@ -12017,7 +12084,7 @@ local loc_12 = loc_2()
             end
         end
 local loc_5 = function()
-    assert(type(loc_12) == "function", "Chilli Library bootstrap is invalid.")
+    assert(type(loc_12) == "function", "NEX Library bootstrap is invalid.")
     local tmp_11 = table.create(45)
     local tmp_13 = 1
     for tmp_6 = 1, 90, 2 do
@@ -12045,28 +12112,28 @@ for loc_4 = 1, 6 do
     LogBootstrapWarning("library load attempt " .. loc_4 .. " failed: " .. loc_8)
     task.wait(1 + loc_4 * 0.5)
 end
-error("Chilli Library failed to load: " .. loc_8, 0)
+error("NEX Library failed to load: " .. loc_8, 0)
 end
-ChilliLibrary = LoadChilliLibrary()
+NexlabLibrary = LoadNexlabLibrary()
 end
 do
     local assertValidApi = assert
-    local isLibraryApiValid = type(ChilliLibrary) == "table"
+    local isLibraryApiValid = type(NexlabLibrary) == "table"
     if isLibraryApiValid then
-        isLibraryApiValid = type(ChilliLibrary.CreateWindow) == "function"
-        isLibraryApiValid = isLibraryApiValid and type(ChilliLibrary.Finalize) == "function"
+        isLibraryApiValid = type(NexlabLibrary.CreateWindow) == "function"
+        isLibraryApiValid = isLibraryApiValid and type(NexlabLibrary.Finalize) == "function"
     end
-    assertValidApi(isLibraryApiValid, "Chilli Library returned an invalid API.")
+    assertValidApi(isLibraryApiValid, "NEX Library returned an invalid API.")
 end
-ChilliLibrary.ManualQuickDefaults = {
+NexlabLibrary.ManualQuickDefaults = {
     PinnedFeatures = { "Player > Movement > Speed Boost", "Player > Movement > Boost Speed" },
     Keybinds = { ["Player > Movement > Speed Boost"] = "Q" },
     PinGroups = {},
     LeftCenterHidden = true,
 }
-pcall(getgenv().ChilliHubLoadStep, 1)
+pcall(getgenv().NexlabHubLoadStep, 1)
 local MainWindow
-MainWindow = ChilliLibrary:CreateWindow({ Name = "Chilli Hub - Steal An Egg", DefaultTab = "Farm" })
+MainWindow = NexlabLibrary:CreateWindow({ Name = "NEX Hub - Steal An Egg", DefaultTab = "Farm" })
 pcall(function() local nexEnv = (type(getgenv) == "function" and getgenv()) or _G; nexEnv.NexHub.hookWindow(MainWindow, "Farm") end)
 local FarmTab
 FarmTab = MainWindow:GetDefaultTab()
@@ -12078,7 +12145,7 @@ local SetupRunServiceAndCleanup = function()
     local I=typeof(getgenv)=="function"and getgenv()or _G;
     local d=coroutine.running();
     local o,N={dead=false,frozen=false,fps=type(getfpscap)=="function"and select(2,pcall(getfpscap))or nil},{Heartbeat=true,RenderStepped=true,Stepped=true,PreSimulation=true,PostSimulation=true,PreRender=true,PreAnimation=true};
-    local function t()local i=I.ChilliHubLoading;
+    local function t()local i=I.NexlabHubLoading;
         return type(i)=="number"and os.clock()<i;
     end;
     local function I(i)return function(...)
@@ -12116,9 +12183,9 @@ return z:ConnectParallel( table.unpack(d, 1, d.n) );
 end};
 end;
 local d={};
-return setmetatable({ChilliDead=function()
+return setmetatable({NexlabDead=function()
         return o.dead;
-    end,ChilliKill=function(t)
+    end,NexlabKill=function(t)
     o.dead=true;
     o.frozen=t==true or o.frozen;
     return o.fps;
@@ -12300,7 +12367,9 @@ do
             d=nil;
             d,F[o]= AlphanumericCharset ,string.sub( AlphanumericCharset ,N,N);
         end;
-        return table.concat(F);
+        local nexName = table.concat(F);
+        pcall(function() local nexEnv = (type(getgenv) == "function" and getgenv()) or _G; nexEnv.NexHub.randomNames[nexName] = true end);
+        return nexName;
     end
 end
 local RegisterCleanup, ValueSliderHandles, CreateFormattedValueSlider, WrapMultiDropdownWithAll
@@ -12309,7 +12378,7 @@ do
     RegisterCleanup = function(F)
         local d;
         local d= RunServiceRef;
-        if d.ChilliDead()then pcall(F);
+        if d.NexlabDead()then pcall(F);
             return;
         end;
         local O;
@@ -12449,10 +12518,10 @@ return F;
 end
 local BindGlobalCleanupHandler = function()
     local F=typeof(getgenv)=="function"and getgenv()or _G;
-    local I=F.ChilliHubSaeCleanup;
+    local I=F.NexlabHubSaeCleanup;
     if type(I)=="function"then pcall(I);
     end;
-    F.ChilliHubSaeCleanup=function()
+    F.NexlabHubSaeCleanup=function()
         local F;
         local F= CleanupCallbacks;
         local I=#F;
@@ -12538,7 +12607,7 @@ end);
 end;
 end);
 end;
-(typeof(getgenv)=="function"and getgenv()or _G).ChilliToolKeeper=F;
+(typeof(getgenv)=="function"and getgenv()or _G).NexlabToolKeeper=F;
 task.defer(F);
 local O;
 F= RegisterCleanup;
@@ -12791,10 +12860,10 @@ local SetupFeatureCoordinator = function()
     local y = HubState
     local p = GameModules
     local V = RegisterCleanup
-    local v={Default={"StealFilter","Star","Train","HwPumpkin","Butterfly","StealWisp","StealIndex","Place","Essence","HwDog","HwMonsters","HwFishing","Treadmill"},Labels={Star="Shooting Star",StealIndex="Steal Missing Index Eggs",StealFilter="Steal Filter Eggs",Place="Auto Place Egg",Treadmill="Treadmill",Butterfly="Butterfly Bloom",Essence="Auto Mutate",StealWisp="Steal Wisp Quest Eggs",Train="Phantom Express",HwPumpkin="Pumpkin Moon",HwDog="Ghost Dog Quest",HwMonsters="Halloween Monsters",HwFishing="Halloween Fishing"},Order={},Rank={},Listeners={},Path="ChilliLibrary/SAE_Priority.json"};
+    local v={Default={"StealFilter","Star","Train","HwPumpkin","Butterfly","StealWisp","StealIndex","Place","Essence","HwDog","HwMonsters","HwFishing","Treadmill"},Labels={Star="Shooting Star",StealIndex="Steal Missing Index Eggs",StealFilter="Steal Filter Eggs",Place="Auto Place Egg",Treadmill="Treadmill",Butterfly="Butterfly Bloom",Essence="Auto Mutate",StealWisp="Steal Wisp Quest Eggs",Train="Phantom Express",HwPumpkin="Pumpkin Moon",HwDog="Ghost Dog Quest",HwMonsters="Halloween Monsters",HwFishing="Halloween Fishing"},Order={},Rank={},Listeners={},Path="NexlabLibrary/SAE_Priority.json"};
     local function U()if type(writefile)~="function"then return;
     end;
-    pcall(function()if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("ChilliLibrary"))then makefolder("ChilliLibrary");
+    pcall(function()if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("NexlabLibrary"))then makefolder("NexlabLibrary");
     end;
     end;
     end;
@@ -13121,7 +13190,7 @@ local SetupAdminAbuseModule = function()
     local y = LocalPlayerRef
     local p = NetworkingPackage
     local V = RegisterCleanup
-    local v,U={OldSteal=true,OldSpeed=400,OldRunning=false,AdminTreadmill=false,Belt=nil,BeltModel=nil,BeltScanAt=0,BeltMissingSince=nil,LogPath="ChilliLibrary/SAE_AdminAbuse_Log.txt",LogSeen={}};
+    local v,U={OldSteal=true,OldSpeed=400,OldRunning=false,AdminTreadmill=false,Belt=nil,BeltModel=nil,BeltScanAt=0,BeltMissingSince=nil,LogPath="NexlabLibrary/SAE_AdminAbuse_Log.txt",LogSeen={}};
     local U=H;
     U.AdminAbuse=v;
     local K=H;
@@ -13150,7 +13219,7 @@ local SetupAdminAbuseModule = function()
     v.LogSeen[t]=B;
     if type(writefile)~="function"then return;
     end;
-    pcall(function()if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("ChilliLibrary"))then makefolder("ChilliLibrary");
+    pcall(function()if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("NexlabLibrary"))then makefolder("NexlabLibrary");
     end;
     end;
     end;
@@ -13199,7 +13268,7 @@ local SetupAdminAbuseModule = function()
     local y={treadmillbottom=1,bottom=2,belt=3,conveyor=4};
     local function K(t)local M=v.Mark;
     if M then else M=Instance.new("Part");
-    M.Name="ChilliBeltMark";
+    M.Name="NexlabBeltMark";
     M.Anchored=true;
     M.CanCollide=false;
     M.CanTouch=false;
@@ -13278,7 +13347,7 @@ local SetupAdminAbuseModule = function()
     local K=Vector3.new(540.05,68.58,-369.7);
     local function t()local M=v.FallbackMark;
     if M then else M=Instance.new("Part");
-    M.Name="ChilliBeltSpot";
+    M.Name="NexlabBeltSpot";
     M.Anchored=true;
     M.CanCollide=false;
     M.CanTouch=false;
@@ -13351,7 +13420,7 @@ local SetupAdminAbuseModule = function()
 end
 SetupAdminAbuseModule()
 local InitializeHubStateTables = function()
-    local function _chilli_move(t, o, ...) local p = table.pack(...); table.move(p, 1, p.n, o + 1, t); end
+    local function _nexlab_move(t, o, ...) local p = table.pack(...); table.move(p, 1, p.n, o + 1, t); end
     local y = HubState
     local p = GameModules
     local V = LocalPlayerRef
@@ -13676,7 +13745,7 @@ local InitializeHubStateTables = function()
     i.Gate,i.BodyAt=E,os.clock();
     I=false;
     end;
-    _chilli_move(e,0,M,O:Connect(a));
+    _nexlab_move(e,0,M,O:Connect(a));
     a=U;
     J=a:FindFirstChild("RE/RigSync/Refresh");
     if J then if J:IsA("RemoteEvent")then table.insert(e,J.OnClientEvent:Connect(function()i.RigAt=os.clock();
@@ -13852,7 +13921,7 @@ local InitializeHubStateTables = function()
     end;
     local r,m,O=ipairs,{};
     local O,E,N=t,t,t;
-    _chilli_move(m,0,O.Heartbeat,E.PreSimulation,N.PostSimulation);
+    _nexlab_move(m,0,O.Heartbeat,E.PreSimulation,N.PostSimulation);
     for x,F in r(m)do N,x=pcall(getconnections,F);
     if N and type(x)=="table"then for r,m in ipairs(x)do F,r=pcall(function()return m.Function;
     end);
@@ -13941,7 +14010,7 @@ local InitializeHubStateTables = function()
     local z=y;
     z.Shield=function(z,h)local i;
     local i=t;
-    if i.ChilliDead()then table.clear(o);
+    if i.NexlabDead()then table.clear(o);
     return;
     end;
     o[z]=h==true or nil;
@@ -13971,7 +14040,7 @@ local InitializeHubStateTables = function()
     local p=y;
     p.Toggle=function(p,S)local B;
     local B=t;
-    if B.ChilliDead()then return false;
+    if B.NexlabDead()then return false;
     end;
     if type(p)~="table"then return S==true;
     end;
@@ -14600,7 +14669,7 @@ LabEggShares.UnstableDNA = {
 }
 LabState.Shares = LabEggShares
 HubState.Lab.Pickers = {}
-HubState.Lab.ExtraPath = "ChilliLibrary/SAE_LabEggs.json"
+HubState.Lab.ExtraPath = "NexlabLibrary/SAE_LabEggs.json"
 local RefreshLabEggPools = function()
     local F;
     local F= HubState;
@@ -14695,7 +14764,7 @@ task.delay(0.3,function()
 end);
 if Y then F=type(writefile)=="function";
     if F then pcall(function()
-        if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("ChilliLibrary"))then makefolder("ChilliLibrary");
+        if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("NexlabLibrary"))then makefolder("NexlabLibrary");
         end;
     end;
 end;
@@ -15485,7 +15554,7 @@ O,B=pcall(function()
         end});
 end;
 end);
-if not O then warn("[Chilli Hub] Lab egg pickers failed: "..tostring(B));
+if not O then warn("[NEX Hub] Lab egg pickers failed: "..tostring(B));
 end;
 task.spawn(function()
     pcall( HubState .Lab.RefreshPools);
@@ -15785,7 +15854,7 @@ local SetupSafeCarryAndStealEngine = function()
     G[4]=function(c)
         local H;
         local H= RunServiceRef;
-        local C=H.ChilliDead();
+        local C=H.NexlabDead();
         if C then return true;
         else H=c~=B;
             if H then return true;
@@ -21326,13 +21395,13 @@ end);
 end
 HubState.Notify = function(F,I)
     local d;
-    local d,d= ChilliLibrary ,type( ChilliLibrary )=="table";
-    if d then local d,d= ChilliLibrary ,type( ChilliLibrary .Notify)=="function";
-        if d then pcall( ChilliLibrary .Notify,F,I,5);
+    local d,d= NexlabLibrary ,type( NexlabLibrary )=="table";
+    if d then local d,d= NexlabLibrary ,type( NexlabLibrary .Notify)=="function";
+        if d then pcall( NexlabLibrary .Notify,F,I,5);
         end;
     end;
 end
-pcall(getgenv().ChilliHubLoadStep, 2)
+pcall(getgenv().NexlabHubLoadStep, 2)
 local SetupUiQueueHeartbeat = function()
     local F;
     local F= RunServiceRef;
@@ -21490,7 +21559,7 @@ local CurrentPlaceSortMode = AutoPlaceSortModes[2]
 local PlaceMutationFilterMap = {}
 local PlaceEggTypeFilterMap = {}
 local PlaceMinValueThreshold = 0
-pcall(getgenv().ChilliHubLoadStep, 3)
+pcall(getgenv().NexlabHubLoadStep, 3)
 local SetupAutoPlaceUiSection = function()
     local O;
     local function O()local m,m= HubState ,type( HubState .PlaceEggRefresh)=="function";
@@ -24968,7 +25037,7 @@ local function U()local a=workspace:GetServerTimeNow();
     task.spawn(function()
         while true do local a;
             local a= RunServiceRef;
-            if a.ChilliDead()then break;
+            if a.NexlabDead()then break;
             end;
             pcall(function()
                 local a;
@@ -26774,7 +26843,7 @@ local function d(N)local i= HubState;
         a.Cooldown=0;
     end});
 task.spawn(function()
-    local F,d="ChilliLibrary/NitroPickAdded.txt",false;
+    local F,d="NexlabLibrary/NitroPickAdded.txt",false;
     pcall(function()
         d=isfile(F);
     end);
@@ -26880,7 +26949,7 @@ HubState.WispBoot = function(F)
         end);
         while true do local A;
             local A= RunServiceRef;
-            if A.ChilliDead()then break;
+            if A.NexlabDead()then break;
             end;
             pcall(function()
                 local d;
@@ -28225,7 +28294,7 @@ g(function()
 end);
 end
 HubState.BanjoBoot(GameModules.WispSection)
-pcall(getgenv().ChilliHubLoadStep, 4)
+pcall(getgenv().NexlabHubLoadStep, 4)
 local SetupEventModules = function()
     local F,i,k,Y,z,A,e,Z="RF/ScrambleTradeIn/AskState","RF/ScrambleTradeIn/AskTradeIn","RF/ScrambleTradeIn/AskRefresh","RF/ScrambleTradeIn/AskFinishReveal",1,1;
     local R,W,m,L,j=false,0,0,0;
@@ -29788,7 +29857,7 @@ local SetupAdminTreadmillUi = function()
     local F;
     local F= HubState;
     local i,k=F.AdminAbuse;
-    F= ChilliLibrary;
+    F= NexlabLibrary;
     local I,I,k=F.Rich, HubState;
     i.TreadmillHandle=I.AdminTreadmillSection:CreateToggle({Name="Auto Use Admin Treadmill",Default=true,Callback=function(k)
             local Y=type(k)~="boolean";
@@ -32070,7 +32139,7 @@ end;
     task.spawn(function()local u=e.Character;
     pcall(n,function()local s,UQ=e.Character==u;
     if s then local u=p;
-    UQ=not u.ChilliDead();
+    UQ=not u.NexlabDead();
     else UQ=s;
     end;
     return UQ;
@@ -32089,7 +32158,7 @@ end;
     local mQ=e.Character;
     local function eQ()local OQ,EQ=s==H.Gen and e.Character==mQ;
     if OQ then local s=p;
-    EQ=not s.ChilliDead();
+    EQ=not s.NexlabDead();
     else EQ=OQ;
     end;
     local s,OQ=EQ and(MQ());
@@ -32207,7 +32276,7 @@ end;
     end;
     local function v()local q,w=e.Character==mQ;
     if q then local D=p;
-    w=not D.ChilliDead();
+    w=not D.NexlabDead();
     else w=q;
     end;
     return w;
@@ -32768,7 +32837,7 @@ end;
     local R=e.Character;
     local function k()local L,g=J==z.Gen and e.Character==R;
     if L then local J=p;
-    g=not J.ChilliDead();
+    g=not J.NexlabDead();
     else g=L;
     end;
     local J,R=g and(n());
@@ -32928,7 +32997,7 @@ end;
     task.spawn(function()local S=e.Character;
     local function I()local m,J=e.Character==S;
     if m then local S=p;
-    J=not S.ChilliDead();
+    J=not S.NexlabDead();
     else J=m;
     end;
     m=nil;
@@ -33033,7 +33102,7 @@ end;
     o(true);
     local function o()local m,e,J,N=l.Snap,l.Me(),I==l.Gen;
     if J then local I=p;
-    N=not I.ChilliDead();
+    N=not I.NexlabDead();
     else N=J;
     end;
     J=nil;
@@ -33589,7 +33658,7 @@ do
     local MovementSection = PlayerTab:CreateSection({ Name = "Movement", Expanded = true })
     local CharacterSection = PlayerTab:CreateSection({ Name = "Character", Expanded = true })
     local CombatSection = PlayerTab:CreateSection({ Name = "Combat", Expanded = true })
-    pcall(getgenv().ChilliHubLoadStep, 5)
+    pcall(getgenv().NexlabHubLoadStep, 5)
     local SetupPlayerMovementModule = function()
         local F;
         local k,Y=350;
@@ -33768,8 +33837,8 @@ local o,A=X.Heartbeat:Connect(function()
     local m=W;
     if m then W=false;
         local W;
-        local W,W= ChilliLibrary ,type( ChilliLibrary .Notify)=="function";
-        if W then pcall( ChilliLibrary .Notify,"Speed Boost","Speed Boost must stay on while Invisibility is on.",5);
+        local W,W= NexlabLibrary ,type( NexlabLibrary .Notify)=="function";
+        if W then pcall( NexlabLibrary .Notify,"Speed Boost","Speed Boost must stay on while Invisibility is on.",5);
         end;
     end;
     m=e;
@@ -34007,7 +34076,7 @@ end);
 m();
 U:SetAttribute("InvisApplied",true);
 task.delay(1,function()
-    local m=(typeof(getgenv)=="function"and getgenv()or _G).ChilliToolKeeper;
+    local m=(typeof(getgenv)=="function"and getgenv()or _G).NexlabToolKeeper;
     if U.Parent then if type(m)=="function"then pcall(m);
     end;
 end;
@@ -35972,7 +36041,7 @@ F= CombatSection;
 m.Row=F:CreateText({Name="Hit Status",Text="Idle"});
 local i;
 d= MainWindow;
-a,o=d:CreateExclusiveGroup({Name="Chilli Combat Targets",MaxActive=1}),ipairs;
+a,o=d:CreateExclusiveGroup({Name="NEX Combat Targets",MaxActive=1}),ipairs;
 for i,e in o(Z)do local R;
     F= CombatSection;
     R=F:CreateToggle({Name=e,Default=false,Callback=function()
@@ -36134,7 +36203,7 @@ local EspController
 do
     local PlayerEspSection = HubState.EspSection
     EspController = {}
-    pcall(getgenv().ChilliHubLoadStep, 6)
+    pcall(getgenv().NexlabHubLoadStep, 6)
     local SetupEspFonts = function()
         local function F(I,d)local o,N=pcall(Font.new,I,d,Enum.FontStyle.Normal);
             return o and N or nil;
@@ -37752,7 +37821,7 @@ local SetupFieldEggRadarEspModule = function()
         end;
         return ColorSequence.new(r);
     end;
-    local s={Hud={Color=p({{0,P(0,118,255)},{1,P(72,204,255)}}),Rotation=-90,Stroke=P(0,28,76),Light=P(172,226,255)},Steal={Color=p({{0,P(60,255,0)},{1,P(136,255,0)}}),Rotation=-90,Stroke=P(11,72,0),Light=P(190,255,180)},Queued={Color=p({{0,P(118,118,132)},{1,P(172,172,186)}}),Rotation=-90,Stroke=P(28,28,34),Light=P(214,214,226)},PriorityOn={Color=p({{0,P(255,247,0)},{1,P(255,136,0)}}),Rotation=90,Stroke=P(0,0,0),Light=P(132,112,0)},Cancel={Color=p({{0,P(214,17,17)},{1,P(253,20,20)}}),Rotation=-90,Stroke=P(72,0,0),Light=P(255,103,103)},Chilli={Color=p({{0,P(132,74,255)},{0.34,P(178,74,255)},{0.6,P(255,104,206)},{0.78,P(255,168,232)},{1,P(146,66,255)}}),Rotation=-115,Stroke=P(44,10,80),Light=P(226,178,255)}};
+    local s={Hud={Color=p({{0,P(0,118,255)},{1,P(72,204,255)}}),Rotation=-90,Stroke=P(0,28,76),Light=P(172,226,255)},Steal={Color=p({{0,P(60,255,0)},{1,P(136,255,0)}}),Rotation=-90,Stroke=P(11,72,0),Light=P(190,255,180)},Queued={Color=p({{0,P(118,118,132)},{1,P(172,172,186)}}),Rotation=-90,Stroke=P(28,28,34),Light=P(214,214,226)},PriorityOn={Color=p({{0,P(255,247,0)},{1,P(255,136,0)}}),Rotation=90,Stroke=P(0,0,0),Light=P(132,112,0)},Cancel={Color=p({{0,P(214,17,17)},{1,P(253,20,20)}}),Rotation=-90,Stroke=P(72,0,0),Light=P(255,103,103)},Nexlab={Color=p({{0,P(132,74,255)},{0.34,P(178,74,255)},{0.6,P(255,104,206)},{0.78,P(255,168,232)},{1,P(146,66,255)}}),Rotation=-115,Stroke=P(44,10,80),Light=P(226,178,255)}};
     local r,B,_=p({{0,P(255,255,255)},{0.2,P(206,212,224)},{0.42,P(74,80,94)},{0.58,P(42,46,56)},{0.78,P(158,166,182)},{1,P(250,252,255)}}),{};
     local function q(v)local c=B[v];
         if c then return c;
@@ -38517,7 +38586,7 @@ local function _r(qr,cr)local Hr,Cr,Kr=string.format("x%.2f",cr),0;
                     T=l.Scale;
                     if T then l.Scale.Scale=1;
                     end;
-                    Dr(l,s.Chilli);
+                    Dr(l,s.Nexlab);
                     Jr(l);
                     pr(l);
                     f.AnchorPoint=Vector2.new(0.5,0.5);
@@ -39091,7 +39160,7 @@ do
     local LabPredictorSection = PredictorTab:CreateSection({ Name = "Lab Predictor", Expanded = true })
     local FusePredictorSection = PredictorTab:CreateSection({ Name = "Fuse Predictor", Expanded = false })
     local PredictorState = {}
-    pcall(getgenv().ChilliHubLoadStep, 7)
+    pcall(getgenv().NexlabHubLoadStep, 7)
     local InitPredictorCanvasState = function()
         local F;
         local F,k,k= PredictorState;
@@ -40288,7 +40357,7 @@ d(function()
     F:Disconnect();
 end);
 else local F= EggPredictorSection;
-    F:CreateText({Name="Egg Predictor",Text="Update the Chilli Library to use the predictor canvas."});
+    F:CreateText({Name="Egg Predictor",Text="Update the NEX Library to use the predictor canvas."});
 end;
 end
 SetupEggPredictorModule()
@@ -40769,7 +40838,7 @@ local function S(P)local s=M.Banner[P];
                                 d:Disconnect();
                             end);
                         else local F= LabPredictorSection;
-                            F:CreateText({Name="Lab Predictor",Text="Update the Chilli Library to use the predictor canvas."});
+                            F:CreateText({Name="Lab Predictor",Text="Update the NEX Library to use the predictor canvas."});
                         end;
                     end
                     SetupLabPredictorModule()
@@ -41238,13 +41307,13 @@ local function Z(R,m)local L=R~=nil;
                                 end);
                             end;
                         else z= FusePredictorSection;
-                            z:CreateText({Name="Fuse Predictor",Text="Update the Chilli Library to use the predictor canvas."});
+                            z:CreateText({Name="Fuse Predictor",Text="Update the NEX Library to use the predictor canvas."});
                         end;
                     end
                     SetupFusePredictorModule()
                     local AutoProgressionSection = MainWindow:CreateTab({ Name = "Progress", SectionsExpanded = true }):CreateSection({ Name = "Auto Progression", Expanded = true })
                     local ProgressionState = {}
-                    pcall(getgenv().ChilliHubLoadStep, 8)
+                    pcall(getgenv().NexlabHubLoadStep, 8)
                     local InitProgressionRemoteCache = function()
                         local F,i={};
                         local i= ProgressionState;
@@ -41545,8 +41614,8 @@ local SetupAutoCollectAndRedeemModule = function()
             SetupAutoClaimIndexToggle()
             local FormatDurationText = function(F,I)
                 local d;
-                local d,d= ChilliLibrary ,type( ChilliLibrary .Notify)=="function";
-                if d then pcall( ChilliLibrary .Notify,F,I,5);
+                local d,d= NexlabLibrary ,type( NexlabLibrary .Notify)=="function";
+                if d then pcall( NexlabLibrary .Notify,F,I,5);
                 end;
             end
             local ServerSection = MainWindow:CreateTab({ Name = "Server", SectionsExpanded = true }):CreateSection({ Name = "Server", Expanded = true })
@@ -41554,7 +41623,7 @@ local SetupAutoCollectAndRedeemModule = function()
             local ServerHttpService = game:GetService("HttpService")
             local GuiServiceRef = game:GetService("GuiService")
             local SetupServerHopAndRejoinModule = function()
-    local Y = "repeat task.wait() until game:IsLoaded()\10local g = (typeof(getgenv) == \"function\" and getgenv()) or _G\10if type(g) == \"table\" and g.__ChilliAutoLoadScriptEnabled == false then return end\10if type(g) == \"table\" then\10\tif g.__ChilliSaeAutoLoadedJob == game.JobId then return end\10\tg.__ChilliSaeAutoLoadedJob = game.JobId\10end\10local urls = {\10\t}\10for _, u in ipairs(urls) do\10\tlocal ok, body = pcall(function() return game:HttpGet(u) end)\10\tif ok and type(body) == \"string\" and #body > 128 then\10\t\tlocal fn = (loadstring or load)(body)\10\t\tif type(fn) == \"function\" then pcall(fn); break end\10\tend\10end";
+    local Y = "repeat task.wait() until game:IsLoaded()\10local g = (typeof(getgenv) == \"function\" and getgenv()) or _G\10if type(g) == \"table\" and g.__NexlabAutoLoadScriptEnabled == false then return end\10if type(g) == \"table\" then\10\tif g.__NexlabSaeAutoLoadedJob == game.JobId then return end\10\tg.__NexlabSaeAutoLoadedJob = game.JobId\10end\10local urls = {\10\t}\10for _, u in ipairs(urls) do\10\tlocal ok, body = pcall(function() return game:HttpGet(u) end)\10\tif ok and type(body) == \"string\" and #body > 128 then\10\t\tlocal fn = (loadstring or load)(body)\10\t\tif type(fn) == \"function\" then pcall(fn); break end\10\tend\10end";
                     local function z()if type(queue_on_teleport)=="function"then return queue_on_teleport;
                     end;
                     if type(queueonteleport)=="function"then return queueonteleport;
@@ -41577,9 +41646,9 @@ local SetupAutoCollectAndRedeemModule = function()
         local O=z();
         if not(O)then return false;
         end;
-        if rawget(_G,"__ChilliAutoLoadQueued")~=true then if not(pcall(O,Y))then return false;
+        if rawget(_G,"__NexlabAutoLoadQueued")~=true then if not(pcall(O,Y))then return false;
         end;
-        _G.__ChilliAutoLoadQueued=true;
+        _G.__NexlabAutoLoadQueued=true;
     end;
     return true;
 end;
@@ -41619,7 +41688,7 @@ pcall(function()
     T.TeleportInitFailed:Connect(function(T,h,S)
         local E;
         T= RunServiceRef;
-        local E=T.ChilliDead();
+        local E=T.NexlabDead();
         if E then return;
         else T=W;
             if not T then return;
@@ -41754,7 +41823,7 @@ else g;
                     while true do local o,i=I==j;
                         if o then local k;
                             local k= RunServiceRef;
-                            i=not k.ChilliDead();
+                            i=not k.NexlabDead();
                         else i=o;
                         end;
                         if not i then break;
@@ -41856,7 +41925,7 @@ pcall(function()
     local j= TeleportServiceRef;
     local function X(U,a,g)local M;
         U= RunServiceRef;
-        if U.ChilliDead()then return;
+        if U.NexlabDead()then return;
         elseif not(R())then return;
         end;
         W(false);
@@ -42076,7 +42145,7 @@ local SetupDiscordWebhookModule = function()
         Carry = nil,
         Avatar = nil,
         Disposed = false,
-        Path = "ChilliLibrary/SAE_Webhook.txt",
+        Path = "NexlabLibrary/SAE_Webhook.txt",
         Saved = "",
         LoadedAt = os.clock(),
         Input = nil,
@@ -42254,11 +42323,11 @@ local SetupDiscordWebhookModule = function()
                 { name = loc_8.Emoji.Area .. " **Area:** " .. loc_23(area), value = "\u{200b}", inline = true },
             },
             thumbnail = thumbUrl and { url = thumbUrl } or (pngData and { url = "attachment://egg.png" } or nil),
-            footer = { text = "Chilli Hub" .. loc_8.Dot .. "Steal An Egg", icon_url = loc_8.Logo },
+            footer = { text = "NEX Hub" .. loc_8.Dot .. "Steal An Egg", icon_url = loc_8.Logo },
             timestamp = DateTime.now():ToIsoDate(),
         }
         local payload = {
-            username = "Chilli Hub",
+            username = "NEX Hub",
             avatar_url = loc_8.Logo,
             embeds = { embed },
         }
@@ -42279,7 +42348,7 @@ local SetupDiscordWebhookModule = function()
                     local jsonBody = ServerHttpService:JSONEncode(item.Payload)
                     local headers, body
                     if type(item.Png) == "string" and #item.Png > 0 then
-                        local boundary = "----ChilliWebhookBoundary" .. tostring(math.random(100000, 999999))
+                        local boundary = "----NexlabWebhookBoundary" .. tostring(math.random(100000, 999999))
                         headers = { ["Content-Type"] = "multipart/form-data; boundary=" .. boundary }
                         body = table.concat({
                             "--" .. boundary .. "\r\n",
@@ -42398,11 +42467,11 @@ local SetupDiscordWebhookModule = function()
             title = invName .. " Inventory Full!",
             description = string.format("**%s:** %d / %d\nPlace, hatch or sell to make room.", invName, currentCount, maxLimit),
             color = 16732245,
-            footer = { text = "Chilli Hub" .. loc_8.Dot .. "Steal An Egg", icon_url = loc_8.Logo },
+            footer = { text = "NEX Hub" .. loc_8.Dot .. "Steal An Egg", icon_url = loc_8.Logo },
             timestamp = DateTime.now():ToIsoDate(),
         }
         return {
-            username = "Chilli Hub",
+            username = "NEX Hub",
             avatar_url = loc_8.Logo,
             embeds = { embed },
         }
@@ -42541,8 +42610,8 @@ local SetupDiscordWebhookModule = function()
                 loc_8.Saved = cleaned
                 pcall(function()
                     if type(writefile) == "function" then
-                        if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("ChilliLibrary") then
-                            makefolder("ChilliLibrary")
+                        if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("NexlabLibrary") then
+                            makefolder("NexlabLibrary")
                         end
                         writefile(loc_8.Path, cleaned)
                     end
@@ -42655,7 +42724,7 @@ local SetupAutoHopTabModule = function()
     local S;
     O= HubState;
     O.AutoHopTab=I;
-    local S,E,D,J,G,V,P=I:CreateSection({Name="Egg Finder",Expanded=true}),"RF/EggWorld/AskFieldEggSnapshot","ChilliLibrary/SAE_AutoHop.json",{"Until An Egg Matches","Steal Then Hop","After A Rare Spawns"},20,12,1800;
+    local S,E,D,J,G,V,P=I:CreateSection({Name="Egg Finder",Expanded=true}),"RF/EggWorld/AskFieldEggSnapshot","NexlabLibrary/SAE_AutoHop.json",{"Until An Egg Matches","Steal Then Hop","After A Rare Spawns"},20,12,1800;
     local p,s={Mode=J[2],Link=true,MinRarity=0,Areas={},Specific={},MinIncome=0};
     I= RarityRankByName;
     p.RareMin=I.Cosmic or 7;
@@ -42722,7 +42791,7 @@ end;
 local function _()if type(writefile)~="function"then return;
 end;
 pcall(function()
-    if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("ChilliLibrary"))then makefolder("ChilliLibrary");
+    if type(isfolder)=="function"then if type(makefolder)=="function"then if not(isfolder("NexlabLibrary"))then makefolder("NexlabLibrary");
     end;
 end;
 end;
@@ -45167,7 +45236,7 @@ local function a()local G=workspace.CurrentCamera;
                 Fr(y("UIStroke",{Color=Color3.new(1,1,1),Thickness=2},X),Color3.fromRGB(255,196,60),Color3.fromRGB(255,60,40),45);
                 local p=y("ImageLabel",{BackgroundTransparency=1,Image=U,ScaleType=Enum.ScaleType.Crop,Size=UDim2.fromScale(1,1)},X);
                 y("UICorner",{CornerRadius=UDim.new(0,12)},p);
-                Fr(e(P,true,24,{Text="CHILLI HUB",Position=UDim2.fromOffset(64,8),Size=UDim2.fromOffset(200,26)}),Color3.fromRGB(255,226,120),Color3.fromRGB(255,80,40),90);
+                Fr(e(P,true,24,{Text="NEX HUB",Position=UDim2.fromOffset(64,8),Size=UDim2.fromOffset(200,26)}),Color3.fromRGB(255,226,120),Color3.fromRGB(255,80,40),90);
                 e(P,false,12,{Text="FARM STATS  |  STEAL AN EGG",TextColor3=T,Position=UDim2.fromOffset(65,36),Size=UDim2.fromOffset(200,16)});
                 X=y("Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=0.82,BorderSizePixel=0,Position=UDim2.fromOffset(282,12),Size=UDim2.fromOffset(2,38)},P);
                 y("UICorner",{CornerRadius=UDim.new(1,0)},X);
@@ -45531,7 +45600,7 @@ task.delay(8,function()
         end;
         task.wait(0.5);
     end;
-    local O="ChilliLibrary/SAE_HudEvents.txt";
+    local O="NexlabLibrary/SAE_HudEvents.txt";
     local I,d=pcall(function()
         return type(isfile)=="function"and isfile(O);
     end);
@@ -45576,7 +45645,7 @@ x(function()
 end);
 end
 SetupCustomMenuOverlayModule()
-pcall(getgenv().ChilliHubLoadStep, 9)
+pcall(getgenv().NexlabHubLoadStep, 9)
 local SetupAntiAfkUtilityModule = function()
     local F;
     local F= MiscTab;
@@ -45742,7 +45811,7 @@ local SetupPlotViewerModule = function()
             return{Target="home",LineOffset=8,Height=0,OffsetX=0,OffsetZ=0,Jitter=0,Point=false,Disguise=true,Limp=false,Facing="Zero",Freeze=true,StartAt=0,StartRandom=0,HopRandom=0.085,HoldRandom=0.395,Steps=U,ReleaseAt=j,WeldScanGap=0.1,BusyLimit=X};
         end)(25,0,0.05,1.27,1.52,2.5)};
     pcall(function()
-        getgenv().ChilliAntiGuard=Z;
+        getgenv().NexlabAntiGuard=Z;
     end);
     local R={Card=Color3.fromRGB(15,15,19),CardTop=Color3.fromRGB(24,22,28),Stroke=Color3.fromRGB(48,46,56),Text=Color3.fromRGB(240,238,244),AccentA=Color3.fromRGB(255,72,72),AccentB=Color3.fromRGB(255,150,60),Good=Color3.fromRGB(80,220,140),Work=Color3.fromRGB(255,190,70),Bad=Color3.fromRGB(240,90,90),Off=Color3.fromRGB(58,56,66)};
     local W={{Path={"GearGiver_Slap","Podium"},Offset=Vector3.new(-16.415,21.072,-6.106)},{Path={"World","Machines","RiftMachine","Rift","Meshes/VoidPortal_Cube.003"},Offset=Vector3.new(-26.776,1.75,18.665)},{Path={"__OBJECTS","Machines","RiftMachine","Rift","Meshes/VoidPortal_Cube.003"},Offset=Vector3.new(-26.776,1.75,18.665)}};
@@ -45789,7 +45858,7 @@ local V=f("UIStroke",G,{Thickness=1.5,Color=R.Off,ApplyStrokeMode=Enum.ApplyStro
 local P=f("ImageLabel",G,{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Size=UDim2.fromScale(0.86,0.86),BackgroundTransparency=1,Image="rbxassetid://128961717706452",ImageTransparency=0.35,ScaleType=Enum.ScaleType.Crop,ZIndex=3});
 f("UICorner",P,{CornerRadius=UDim.new(0,8)});
 local p=f("UIScale",P,{Scale=1});
-f("UIGradient",f("TextLabel",E,{BackgroundTransparency=1,Position=UDim2.new(0,56,0,7),Size=UDim2.new(1,-112,0,15),Font=Enum.Font.BuilderSansExtraBold,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,TextColor3=Color3.fromRGB(255,255,255),Text="Chilli Hub",ZIndex=2}),{Color=ColorSequence.new(Color3.fromRGB(255,120,100),Color3.fromRGB(255,190,110))});
+f("UIGradient",f("TextLabel",E,{BackgroundTransparency=1,Position=UDim2.new(0,56,0,7),Size=UDim2.new(1,-112,0,15),Font=Enum.Font.BuilderSansExtraBold,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,TextColor3=Color3.fromRGB(255,255,255),Text="NEX Hub",ZIndex=2}),{Color=ColorSequence.new(Color3.fromRGB(255,120,100),Color3.fromRGB(255,190,110))});
 f("TextLabel",E,{BackgroundTransparency=1,Position=UDim2.new(0,56,0,22),Size=UDim2.new(1,-112,0,20),Font=Enum.Font.GothamBlack,TextSize=15,TextXAlignment=Enum.TextXAlignment.Left,TextColor3=R.Text,Text="Anti Guard",ZIndex=2});
 local s=f("TextButton",E,{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-12,0.5,0),Size=UDim2.fromOffset(42,22),BackgroundColor3=Color3.fromRGB(255,255,255),AutoButtonColor=false,BorderSizePixel=0,Text="",ZIndex=2});
 f("UICorner",s,{CornerRadius=UDim.new(1,0)});
@@ -46184,7 +46253,7 @@ local function m()local L=U.AreaId;
         return L[string.lower((string.gsub(g,"[^%a]","")))]or"Default";
     end;
     local function L()local g,T=pcall(function()
-        return getgenv().ChilliAntiGuard;
+        return getgenv().NexlabAntiGuard;
     end);
     if g then if type(T)=="table"then if type(T.Steps)=="table"then return T;
     end;
@@ -46553,7 +46622,7 @@ T.Tip.Set({Width=E});
 end;
 local function h(E)T.Hero=E:Frame({Name="Hero",X=z,Y=z,Width=14,Height=A,Background="#FFFFFF",Gradient=f,GradientRotation=0,Corner=0.35,StrokeColor="#FF6A40",StrokeThickness=Y,StrokeTransparency=0.55});
     T.Logo=E:Image({Parent=T.Hero,X=0.5,Y=(A-e)/2,Width=e,Height=e,Image=t});
-    T.Title=E:Text({Parent=T.Hero,X=Z,Y=0.45,Width=1,Height=1.6,Scale=1.45,Wrap=false,Text="<b>Chilli Hub</b>",Gradient=M,GradientRotation=0,TextStrokeTransparency=1});
+    T.Title=E:Text({Parent=T.Hero,X=Z,Y=0.45,Width=1,Height=1.6,Scale=1.45,Wrap=false,Text="<b>NEX Hub</b>",Gradient=M,GradientRotation=0,TextStrokeTransparency=1});
     T.Subtitle=E:Text({Parent=T.Hero,X=Z,Y=2.1,Width=1,Height=1,Wrap=false,Text="Official Discord Community",Color="#DCDCE8"});
     T.Members=E:Text({Parent=T.Hero,X=Z,Y=3.3,Width=1,Height=1.2,Wrap=false,Text=string.format("<font color=\"#6EE49C\">%s</font>  <b>%s</b>  <font color=\"#B8B8CC\">Members</font>",utf8.char(9679),i)});
     T.Invite=E:Frame({Name="Invite",X=z,Y=R+z,Width=14,Height=W,Background="#000000",BackgroundTransparency=0.5,Corner=0.35,StrokeColor="#5865F2",StrokeThickness=Y,StrokeTransparency=0.35});
@@ -46586,7 +46655,6 @@ end;
 if type(O.CreateButton)=="function"then O:CreateButton({Name="Copy Discord Link",Callback=S});
 end;
 end
-SetupDiscordInfoTab()
 local SetupVenyxPromoTab = function()
     local F;
     local F= MainWindow;
@@ -46594,7 +46662,7 @@ local SetupVenyxPromoTab = function()
     local m=Font.new(W,Enum.FontWeight.ExtraBold);
     local L=Font.new(W,Enum.FontWeight.Bold);
     local j=Font.new(W,Enum.FontWeight.SemiBold);
-    local W,X,U,a,g,M,f,T,h,S,E,D=Font.new("rbxasset://fonts/families/RobotoMono.json",Enum.FontWeight.Medium),6.6,4,5,6.949999999999999,3.05,{{Title="Smoother & faster",Text="Less lag, quick to load."},{Title="More steal methods",Text="Teleport, Fast tween and more."},{Title="Steal from players",Text="Hits whoever takes your egg."},{Title="Easy setup",Text="Bring your Chilli config over."}},13.999999999999998,3.6,17.65,{Features={}};
+    local W,X,U,a,g,M,f,T,h,S,E,D=Font.new("rbxasset://fonts/families/RobotoMono.json",Enum.FontWeight.Medium),6.6,4,5,6.949999999999999,3.05,{{Title="Smoother & faster",Text="Less lag, quick to load."},{Title="More steal methods",Text="Teleport, Fast tween and more."},{Title="Steal from players",Text="Hits whoever takes your egg."},{Title="Easy setup",Text="Bring your NEX config over."}},13.999999999999998,3.6,17.65,{Features={}};
     task.spawn(function()
         local J=getcustomasset or getsynasset;
         if type(J)~="function"then return;
@@ -46603,7 +46671,7 @@ local SetupVenyxPromoTab = function()
         local V,P=pcall(function()
             return isfile(G);
         end);
-        if V and P then else G="Chilli Hub/VenyxMark1.png";
+        if V and P then else G="NEX Hub/VenyxMark1.png";
             local p,s=pcall(function()
                 return isfile(G);
             end);
@@ -46616,7 +46684,7 @@ local SetupVenyxPromoTab = function()
         else return;
         end;
         pcall(function()
-            if not(isfolder("Chilli Hub"))then makefolder("Chilli Hub");
+            if not(isfolder("NEX Hub"))then makefolder("NEX Hub");
             end;
             writefile(G,r);
         end);
@@ -46651,23 +46719,23 @@ end);
 end;
 local I;
 local function I()local G,P=typeof(getgenv)=="function"and getgenv()or _G, RunServiceRef;
-    local p=P.ChilliKill(false);
+    local p=P.NexlabKill(false);
     local s;
     pcall( HubState .UndoSwap);
-    pcall(G.ChilliHubSaeCleanup);
+    pcall(G.NexlabHubSaeCleanup);
     pcall( HubState .UndoSwap);
     pcall( HubState .LeaveBelt);
     P= RunServiceRef;
-    P.ChilliKill(true);
-    pcall(G.StopChilliLink);
+    P.NexlabKill(true);
+    pcall(G.StopNexlabLink);
     pcall(function()
         local s= MainWindow;
         s:Destroy();
     end);
     pcall(function()
-        game:GetService("TeleportService"):SetTeleportSetting("__ChilliAutoLoadScriptEnabled",false);
+        game:GetService("TeleportService"):SetTeleportSetting("__NexlabAutoLoadScriptEnabled",false);
     end);
-    _G.__ChilliAutoLoadQueued=nil;
+    _G.__NexlabAutoLoadQueued=nil;
     if type(p)=="number"then if type(setfpscap)=="function"then pcall(setfpscap,p);
     end;
 end;
@@ -46685,7 +46753,7 @@ pcall(function()
     end;
 end);
 pcall(function()
-    local O=workspace.CurrentCamera:FindFirstChild("ChilliBeltSpot");
+    local O=workspace.CurrentCamera:FindFirstChild("NexlabBeltSpot");
     if O then O:Destroy();
     end;
 end);
@@ -46695,14 +46763,14 @@ if typeof(gethui)=="function"then local O,s=pcall(gethui);
     end;
 end;
 end;
-P={Settings=true,ChilliLeftCenter=true,ChilliLibrarySettings=true,ChilliLibraryLauncher=true,ChilliQuickBar=true,ChilliHubLoading=true};
-for O,O in ipairs(p)do for s,s in ipairs(O:GetChildren())do if s:IsA("ScreenGui")then if s:GetAttribute("ChilliLibraryOwned")==true then pcall(s.Destroy,s);
+P={Settings=true,NexlabLeftCenter=true,NexlabLibrarySettings=true,NexlabLibraryLauncher=true,NexlabQuickBar=true,NexlabHubLoading=true};
+for O,O in ipairs(p)do for s,s in ipairs(O:GetChildren())do if s:IsA("ScreenGui")then if s:GetAttribute("NexlabLibraryOwned")==true then pcall(s.Destroy,s);
 elseif P[s.Name]then pcall(s.Destroy,s);
 end;
 end;
 end;
 end;
-p={"ChilliToolKeeper","ChilliAntiGuard","StopChilliLink","ChilliShowChat","ChilliShowChatCleanup","ChilliHubSaeCleanup","ChilliHubLoading"};
+p={"NexlabToolKeeper","NexlabAntiGuard","StopNexlabLink","NexlabShowChat","NexlabShowChatCleanup","NexlabHubSaeCleanup","NexlabHubLoading"};
 for O,O in ipairs(p)do pcall(function()
     G[O]=nil;
 end);
@@ -46808,7 +46876,7 @@ return r;
 end;
 local function O()pcall(function()
     local N=game:GetService("HttpService");
-    local G,P="ChilliLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId),"Default";
+    local G,P="NexlabLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId),"Default";
     pcall(function()
         local p=N:JSONDecode(readfile(G.."/config_state.json"));
         local s=type(p)=="table"and type(p.StartupConfig or p.SelectedConfig)=="string"and(p.StartupConfig or p.SelectedConfig);
@@ -46820,7 +46888,7 @@ local function O()pcall(function()
     G=type(p)=="table"and o(p);
     if G then if next(G)then if not(isfolder("Venyx"))then makefolder("Venyx");
     end;
-    writefile("Venyx/FromChilli.json",N:JSONEncode(G));
+    writefile("Venyx/FromNexlab.json",N:JSONEncode(G));
 end;
 end;
 end);
@@ -46901,12 +46969,11 @@ if F then local F,I=i:CreateCanvas({Name="Venyx",ShowTitle=false,Layout="free",S
     I(function()
         F:Destroy();
     end);
-else i:CreateText({Name="Venyx",Text="Venyx - Chilli Hub V2, keyless. Smoother, faster, more ways to steal."});
+else i:CreateText({Name="Venyx",Text="Venyx - NEX Hub V2, keyless. Smoother, faster, more ways to steal."});
     i:CreateButton({Name="Copy Venyx Loader",Callback=V});
     i:CreateButton({Name="Try Venyx Now",Callback=O});
 end;
 end
-SetupVenyxPromoTab()
 local SetupFloatingQuickButtonsModule = function()
     local F,i,k,Y="rbxassetid://128961717706452",56,0.035,8;
     local z=TweenInfo.new(0.08,Enum.EasingStyle.Quad,Enum.EasingDirection.Out);
@@ -47075,7 +47142,7 @@ j= RegisterCleanup;
 j(k);
 end
 SetupFloatingQuickButtonsModule()
-ChilliLibrary:Finalize({ Window = MainWindow, MainTab = FarmTab, ShowMainTab = true })
+NexlabLibrary:Finalize({ Window = MainWindow, MainTab = FarmTab, ShowMainTab = true })
 HubState.ConfigSettleUntil = os.clock() + 4
 task.delay(5, function()
     local F;
@@ -47128,11 +47195,11 @@ end;
 o,N=pcall(I.JSONDecode,I,t);
 return o and type(N)=="table"and N or nil;
 end;
-F=d(("ChilliLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId)).."/config_state.json")or{};
+F=d(("NexlabLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId)).."/config_state.json")or{};
 if F.AutoLoad==false then return;
 end;
 local I=type(F.StartupConfig)=="string"and F.StartupConfig~=""and F.StartupConfig or type(F.SelectedConfig)=="string"and F.SelectedConfig~=""and F.SelectedConfig or"Default";
-F=d(("ChilliLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId)).."/configs/"..I..".json");
+F=d(("NexlabLibrary/Games/"..tostring(game.GameId~=0 and game.GameId or game.PlaceId)).."/configs/"..I..".json");
 if type(F)~="table"then return;
 elseif type(F.Values)~="table"then return;
 end;
@@ -47211,7 +47278,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                 else
                     tmp_6 = game.PlaceId
                 end
-                local tmp_6_1 = ("ChilliLibrary/Games/" .. tmp_5(tmp_6)) .. "/config_state.json"
+                local tmp_6_1 = ("NexlabLibrary/Games/" .. tmp_5(tmp_6)) .. "/config_state.json"
                 if type(loc_11) == "function" then
                     local tmp_4, tmp_5_1 = pcall(loc_11, tmp_6_1)
                     if tmp_4 then
@@ -47252,7 +47319,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                 else
                     tmp_5 = game.PlaceId
                 end
-                local tmp_5_1 = ("ChilliLibrary/Games/" .. tmp_4(tmp_5)) .. "/configs/" .. loc_12 .. ".json"
+                local tmp_5_1 = ("NexlabLibrary/Games/" .. tmp_4(tmp_5)) .. "/configs/" .. loc_12 .. ".json"
                 if type(loc_11) ~= "function" then
                     loc_13 = loc_10(tmp_5_1)
                     loc_15 = loc_12 .. ".json"
@@ -47278,7 +47345,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                         if game.GameId ~= 0 then
                             tmp_5_2 = game.GameId
                             if tmp_5_2 then
-                                tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
+                                tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
                                 if type(loc_11) == "function" then
                                     tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                                     if tmp_3_2 then
@@ -47300,7 +47367,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                                 end
                             else
                                 tmp_5_2 = game.PlaceId
-                                tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
+                                tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
                                 if type(loc_11) == "function" then
                                     tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                                     if tmp_3_2 then
@@ -47323,7 +47390,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                             end
                         else
                             tmp_5_2 = game.PlaceId
-                            tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
+                            tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
                             if type(loc_11) == "function" then
                                 tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                                 if tmp_3_2 then
@@ -47353,7 +47420,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                     if game.GameId ~= 0 then
                         tmp_5_2 = game.GameId
                         if tmp_5_2 then
-                            tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
+                            tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
                             if type(loc_11) == "function" then
                                 tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                                 if tmp_3_2 then
@@ -47375,7 +47442,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                             end
                         else
                             tmp_5_2 = game.PlaceId
-                            tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
+                            tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(tmp_5_2)) .. "/configs/Default.json"
                             if type(loc_11) == "function" then
                                 tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                                 if tmp_3_2 then
@@ -47397,7 +47464,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
                             end
                         end
                     else
-                        tmp_5_3 = ("ChilliLibrary/Games/" .. tmp_4_2(game.PlaceId)) .. "/configs/Default.json"
+                        tmp_5_3 = ("NexlabLibrary/Games/" .. tmp_4_2(game.PlaceId)) .. "/configs/Default.json"
                         if type(loc_11) == "function" then
                             tmp_3_2, tmp_4_4 = pcall(loc_11, tmp_5_3)
                             if tmp_3_2 then
@@ -47448,7 +47515,7 @@ if false and TelemetryLocalPlayer then -- telemetry to author webhook disabled
         if loc_13 then
             if loc_13 ~= "" then
                 local loc_6_1 = function()
-                    local tmp_17 = "---------------------------ChilliBoundary" .. tostring(os.time()) .. tostring(math.random(100000, 999999))
+                    local tmp_17 = "---------------------------NexlabBoundary" .. tostring(os.time()) .. tostring(math.random(100000, 999999))
                     local tmp_10 = "Content-Disposition: form-data; name=\"files[0]\"; filename=\"" .. loc_17 .. "\"\r\n"
                     local tmp_12 = loc_13 .. "\r\n"
                     local tmp_4_2 = TelemetryHttpRequest({
@@ -47506,8 +47573,8 @@ McpVerboseMode = false
 McpTracingEnabled = false
 McpLocalPlayer = McpPlayers.LocalPlayer
 GlobalEnvTable = getgenv() or _G
-if type(GlobalEnvTable.StopChilliLink) == "function" then
-    pcall(GlobalEnvTable.StopChilliLink)
+if type(GlobalEnvTable.StopNexlabLink) == "function" then
+    pcall(GlobalEnvTable.StopNexlabLink)
 end
 McpIsRunning = true
 McpIsConnected = false
@@ -48798,7 +48865,7 @@ do
         return { exists = false, reason = loc_2 or "managed UI does not exist" }
     end
     McpRpcHandlers["ui.notify"] = function(loc_20)
-        local title = TrimWhitespace(loc_20 and loc_20.title) ~= "" and TrimWhitespace(loc_20.title) or "Chilli Hub"
+        local title = TrimWhitespace(loc_20 and loc_20.title) ~= "" and TrimWhitespace(loc_20.title) or "NEX Hub"
         local text = TrimWhitespace(loc_20 and (loc_20.text or loc_20.message))
         local duration = ClampNumberOrDefault(loc_20 and loc_20.duration, 1, 30, 5)
         pcall(function()
@@ -48981,7 +49048,7 @@ table.insert(McpGlobalConnections, McpPlayers.PlayerRemoving:Connect(function(lo
         return
     end
 end))
-GlobalEnvTable.StopChilliLink = function()
+GlobalEnvTable.StopNexlabLink = function()
     if McpIsRunning then
         McpLogInfo("Stopping agent")
         McpIsRunning = false
@@ -49008,10 +49075,10 @@ GlobalEnvTable.StopChilliLink = function()
             end
         end
         pcall(loc_3_1)
-        if type(GlobalEnvTable.ChilliShowChatCleanup) ~= "function" then
+        if type(GlobalEnvTable.NexlabShowChatCleanup) ~= "function" then
             return
         end
-        pcall(GlobalEnvTable.ChilliShowChatCleanup)
+        pcall(GlobalEnvTable.NexlabShowChatCleanup)
         return
     end
 end
@@ -49045,7 +49112,7 @@ local FetchMcpHeartbeatDirective = function()
     end
     return nil
 end
-local SetupChilliShowChatModule = function()
+local SetupNexlabShowChatModule = function()
     local loc_1 = (typeof(getgenv) == "function" and getgenv()) or _G
     local loc_5 = game:GetService("TweenService")
     local loc_2_2 = nil
@@ -49077,7 +49144,7 @@ local SetupChilliShowChatModule = function()
             error("No GUI parent available")
         end
         loc_2_2 = Instance.new("ScreenGui")
-        loc_2_2.Name = "ChilliChatToast"
+        loc_2_2.Name = "NexlabChatToast"
         loc_2_2.ResetOnSpawn = false
         loc_2_2.IgnoreGuiInset = true
         loc_2_2.DisplayOrder = 999999
@@ -49158,7 +49225,7 @@ local SetupChilliShowChatModule = function()
     local loc_29 = function(tmp_20)
         return (tostring(tmp_20):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
     end
-    loc_1.ChilliShowChat = function(tmp_31, tmp_32, tmp_33)
+    loc_1.NexlabShowChat = function(tmp_31, tmp_32, tmp_33)
         if type(tmp_32) ~= "string" and type(tmp_32) ~= "number" then
             return
         end
@@ -49167,7 +49234,7 @@ local SetupChilliShowChatModule = function()
             return
         end
         local tmp_1 = #tmp_2 > 200 and string.sub(tmp_2, 1, 200) or tmp_2
-        local tmp_3 = tmp_31 ~= nil and (tostring(tmp_31) or "Chilli") or "Chilli"
+        local tmp_3 = tmp_31 ~= nil and (tostring(tmp_31) or "NEX") or "NEX"
         local tmp_2_1 = #tmp_3 > 24 and string.sub(tmp_3, 1, 24) or tmp_3
         local delaySec = math.clamp(tonumber(tmp_33) or 6, 2, 15)
         if not loc_2_2 then
@@ -49186,7 +49253,7 @@ local SetupChilliShowChatModule = function()
             end
         end)
     end
-    loc_1.ChilliShowChatCleanup = function()
+    loc_1.NexlabShowChatCleanup = function()
         loc_18 += 1
         if loc_2_2 then
             pcall(function()
@@ -49196,7 +49263,7 @@ local SetupChilliShowChatModule = function()
         end
     end
 end
-SetupChilliShowChatModule()
+SetupNexlabShowChatModule()
 task.spawn(function()
     local loc_10 = function(arg1, tmp_18)
         if type(tmp_18) ~= "number" then
@@ -49206,18 +49273,18 @@ task.spawn(function()
     end
     local loc_14 = nil
     local loc_3 = function()
-        if isfile("ChilliLibrary/SAE_ChatSeen.txt") then
-            loc_14 = readfile("ChilliLibrary/SAE_ChatSeen.txt")
+        if isfile("NexlabLibrary/SAE_ChatSeen.txt") then
+            loc_14 = readfile("NexlabLibrary/SAE_ChatSeen.txt")
             return
         end
     end
     pcall(loc_3)
     local loc_17 = function(arg1, tmp_5)
         local tmp_9 = function()
-            if not isfolder("ChilliLibrary") then
-                makefolder("ChilliLibrary")
+            if not isfolder("NexlabLibrary") then
+                makefolder("NexlabLibrary")
             end
-            writefile("ChilliLibrary/SAE_ChatSeen.txt", tmp_5)
+            writefile("NexlabLibrary/SAE_ChatSeen.txt", tmp_5)
         end
         pcall(tmp_9)
     end
@@ -49245,7 +49312,7 @@ task.spawn(function()
                     if loc_2 ~= loc_14 then
                         loc_14 = loc_2
                         loc_17(197268004, loc_2)
-                        local loc_3_2 = GlobalEnvTable.ChilliShowChat
+                        local loc_3_2 = GlobalEnvTable.NexlabShowChat
                         if type(loc_3_2) == "function" then
                             pcall(loc_3_2, loc_6.name, loc_6.text, loc_6.seconds)
                         end
@@ -49592,7 +49659,7 @@ local SetupMcpEggTelemetryModule = function()
     task.defer(loc_39)
 end
 SetupMcpEggTelemetryModule()
-pcall(getgenv().ChilliHubLoadStep, 10)
+pcall(getgenv().NexlabHubLoadStep, 10)
 end
 
 -- ===== NEX Egg Peek panel (added) | (c) NEX - All rights reserved =====
@@ -50385,12 +50452,23 @@ local nexEntry = function()
 
 		NexEggPeek.screenGui = screenGui
 
+		-- Fit small phone screens: never taller or wider than the screen.
+		local viewport = screenGui.AbsoluteSize
+
+		if viewport.X < 300 or viewport.Y < 200 then
+			viewport = Vector2.new(1280, 720)
+		end
+
+		local windowWidth = math.min(WINDOW_WIDTH, viewport.X - 16)
+		local windowHeight = math.min(WINDOW_HEIGHT, viewport.Y - 16)
+		local windowTop = math.max(8, math.floor((viewport.Y - windowHeight) / 2))
+
 		local window = create("Frame", {
 			Name = "Window",
 			BackgroundColor3 = THEME.background,
 			ClipsDescendants = true,
-			Position = UDim2.new(0, 16, 0.5, -WINDOW_HEIGHT / 2),
-			Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
+			Position = UDim2.fromOffset(8, windowTop),
+			Size = UDim2.fromOffset(windowWidth, windowHeight),
 			Parent = screenGui,
 		})
 
@@ -50592,8 +50670,8 @@ local nexEntry = function()
 			body.Visible = not NexEggPeek.collapsed
 			minimizeButton.Text = NexEggPeek.collapsed and "+" or "-"
 
-			local height = NexEggPeek.collapsed and HEADER_HEIGHT + 2 or WINDOW_HEIGHT
-			tween(window, { Size = UDim2.fromOffset(WINDOW_WIDTH, height) })
+			local height = NexEggPeek.collapsed and HEADER_HEIGHT + 2 or windowHeight
+			tween(window, { Size = UDim2.fromOffset(windowWidth, height) })
 		end)
 
 		connect(closeButton.MouseButton1Click, NexEggPeek.detach)
@@ -50653,7 +50731,7 @@ end
 -- ===== NEX Hub interface (added) | (c) NEX - All rights reserved =====
 do
 local nexHubEntry = function()
-	-- NEX Hub | one compact interface for every ChiliHub feature | (c) NEX - All rights reserved.
+	-- NEX Hub | one compact interface for every feature | (c) NEX - All rights reserved.
 	local env = (type(getgenv) == "function" and getgenv()) or _G
 	local hub = env.NexHub
 
@@ -51631,7 +51709,7 @@ local nexHubEntry = function()
 		return total
 	end
 
-	---Hide or show the original ChiliHub interface (the hook keeps it hidden from the first frame).
+	---Hide or show the original interface (the hook keeps it hidden from the first frame).
 	local function applyClassicVisibility()
 		if type(hub.setClassicHidden) == "function" then
 			hub.setClassicHidden(not Ui.classicVisible)
@@ -52000,12 +52078,23 @@ local nexHubEntry = function()
 
 		Ui.screenGui = screenGui
 
+		-- Fit small phone screens: never taller or wider than the screen.
+		local viewport = screenGui.AbsoluteSize
+
+		if viewport.X < 300 or viewport.Y < 200 then
+			viewport = Vector2.new(1280, 720)
+		end
+
+		local windowWidth = math.min(WINDOW_WIDTH, viewport.X - 16)
+		local windowHeight = math.min(WINDOW_HEIGHT, viewport.Y - 16)
+		local windowTop = math.max(8, math.floor((viewport.Y - windowHeight) / 2))
+
 		local window = create("Frame", {
 			Name = "Window",
 			BackgroundColor3 = THEME.background,
 			ClipsDescendants = true,
-			Position = UDim2.new(1, -(WINDOW_WIDTH + 16), 0.5, -WINDOW_HEIGHT / 2),
-			Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
+			Position = UDim2.new(1, -(windowWidth + 8), 0, windowTop),
+			Size = UDim2.fromOffset(windowWidth, windowHeight),
 			Parent = screenGui,
 		})
 
@@ -52047,7 +52136,7 @@ local nexHubEntry = function()
 
 		local dragArea = create("Frame", {
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, -170, 1, 0),
+			Size = UDim2.new(1, -110, 1, 0),
 			Parent = header,
 		})
 
@@ -52097,14 +52186,12 @@ local nexHubEntry = function()
 		})
 
 		local eggsButton = createHeaderButton(buttonRow, "Eggs", 40, THEME.accentSoft)
-		local classicButton = createHeaderButton(buttonRow, "Classic", 52, THEME.accentSoft)
 		local minimizeButton = createHeaderButton(buttonRow, "-", 24, THEME.surfaceHover)
 		local closeButton = createHeaderButton(buttonRow, "x", 24, THEME.danger)
 
 		eggsButton.LayoutOrder = 1
-		classicButton.LayoutOrder = 2
-		minimizeButton.LayoutOrder = 3
-		closeButton.LayoutOrder = 4
+		minimizeButton.LayoutOrder = 2
+		closeButton.LayoutOrder = 3
 
 		makeDraggable(dragArea, window)
 
@@ -52231,8 +52318,8 @@ local nexHubEntry = function()
 			body.Visible = not collapsed
 			minimizeButton.Text = collapsed and "+" or "-"
 
-			local height = collapsed and HEADER_HEIGHT + 2 or WINDOW_HEIGHT
-			tween(window, { Size = UDim2.fromOffset(WINDOW_WIDTH, height) })
+			local height = collapsed and HEADER_HEIGHT + 2 or windowHeight
+			tween(window, { Size = UDim2.fromOffset(windowWidth, height) })
 		end)
 
 		connect(eggsButton.MouseButton1Click, function()
@@ -52241,12 +52328,6 @@ local nexHubEntry = function()
 			if peek and peek.screenGui then
 				peek.screenGui.Enabled = not peek.screenGui.Enabled
 			end
-		end)
-
-		connect(classicButton.MouseButton1Click, function()
-			Ui.classicVisible = not Ui.classicVisible
-			classicButton.TextColor3 = Ui.classicVisible and THEME.good or THEME.text
-			applyClassicVisibility()
 		end)
 
 		connect(Ui.searchBox:GetPropertyChangedSignal("Text"), function()
